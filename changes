@@ -86,3 +86,56 @@ def visualize_graph_changes(graph_old, graph_new, changes):
 
 # Run visualization
 visualize_graph_changes(graph_old, graph_new, changes)
+
+import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt
+
+def detect_anomalous_nodes(graph):
+    """Detects nodes with unusually high connections (potential fraudsters)."""
+    degrees = dict(graph.degree())
+    threshold = np.percentile(list(degrees.values()), 95)  # Flag top 5% as anomalous
+    anomalies = {node: degree for node, degree in degrees.items() if degree > threshold}
+
+    print(f"⚠️ Detected {len(anomalies)} anomalous nodes (high-degree fraud risk)")
+    return set(anomalies.keys())  # Return as a set for easy comparison
+
+# Detect anomalous nodes in both graphs
+anomalies_old = detect_anomalous_nodes(graph_old)
+anomalies_new = detect_anomalous_nodes(graph_new)
+
+# Compare anomalies
+new_fraudsters = anomalies_new - anomalies_old  # Newly detected fraudsters
+persisting_fraudsters = anomalies_new & anomalies_old  # Existing high-risk nodes
+removed_fraudsters = anomalies_old - anomalies_new  # Previously flagged but now missing
+
+print(f"🔴 New Fraudsters: {len(new_fraudsters)}")
+print(f"🟠 Persisting Fraudsters: {len(persisting_fraudsters)}")
+print(f"✅ Removed Fraudsters: {len(removed_fraudsters)}")
+
+def visualize_anomalous_changes(graph_old, graph_new, anomalies_old, anomalies_new):
+    """Visualize fraud trends by highlighting anomalous nodes."""
+    
+    plt.figure(figsize=(14, 6))
+
+    # **Old Graph Snapshot**
+    plt.subplot(1, 2, 1)
+    node_colors_old = ["orange" if node in anomalies_old else "blue" for node in graph_old.nodes]
+    nx.draw(graph_old, node_color=node_colors_old, with_labels=False, node_size=20, edge_color="gray", alpha=0.5)
+    plt.title("📌 Graph Snapshot (Old) - High-Risk Nodes in Orange")
+
+    # **New Graph Snapshot**
+    plt.subplot(1, 2, 2)
+    node_colors_new = [
+        "red" if node in new_fraudsters else 
+        "orange" if node in persisting_fraudsters else 
+        "blue" 
+        for node in graph_new.nodes
+    ]
+    nx.draw(graph_new, node_color=node_colors_new, with_labels=False, node_size=20, edge_color="gray", alpha=0.5)
+    plt.title("🔥 Graph Snapshot (New) - New Fraudsters in Red")
+
+    plt.show()
+
+# Run the visualization
+visualize_anomalous_changes(graph_old, graph_new, anomalies_old, anomalies_new)
