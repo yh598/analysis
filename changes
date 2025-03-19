@@ -60,3 +60,29 @@ def plot_changes(changes):
     plt.show()
 
 plot_changes(changes)
+
+import matplotlib.pyplot as plt
+
+def visualize_graph_changes(graph_old, graph_new, changes):
+    """Visualizes the graph changes highlighting new fraud nodes."""
+    
+    plt.figure(figsize=(10, 6))
+
+    # Convert changes["added_nodes"] to a set of actual node IDs (not just a count)
+    added_nodes_set = set(changes.get("added_nodes_list", []))  # Use a valid iterable
+    
+    # Draw graph snapshot (Old)
+    plt.subplot(1, 2, 1)
+    nx.draw(graph_old, node_color="blue", with_labels=False, node_size=20, edge_color="gray", alpha=0.5)
+    plt.title("📌 Graph Snapshot (Old)")
+
+    # Draw graph snapshot (New)
+    plt.subplot(1, 2, 2)
+    node_colors = ["red" if node in added_nodes_set else "blue" for node in graph_new.nodes]
+    nx.draw(graph_new, node_color=node_colors, with_labels=False, node_size=20, edge_color="gray", alpha=0.5)
+    plt.title("🔥 Graph Snapshot (New) - Fraudsters in Red")
+
+    plt.show()
+
+# Run visualization
+visualize_graph_changes(graph_old, graph_new, changes)
