@@ -139,3 +139,68 @@ def visualize_anomalous_changes(graph_old, graph_new, anomalies_old, anomalies_n
 
 # Run the visualization
 visualize_anomalous_changes(graph_old, graph_new, anomalies_old, anomalies_new)
+
+import matplotlib.pyplot as plt
+
+def plot_fraudster_changes(changes):
+    """Visualizes added and removed fraudster nodes."""
+    
+    old_types = changes["node_type_changes"]["old"]
+    new_types = changes["node_type_changes"]["new"]
+
+    # Extract fraudster counts before and after
+    fraudsters_old = old_types.get("fraudster", 0)
+    fraudsters_new = new_types.get("fraudster", 0)
+
+    added_fraudsters = max(fraudsters_new - fraudsters_old, 0)
+    removed_fraudsters = max(fraudsters_old - fraudsters_new, 0)
+
+    # Bar chart visualization
+    labels = ["Added Fraudsters", "Removed Fraudsters"]
+    values = [added_fraudsters, removed_fraudsters]
+
+    plt.figure(figsize=(6,4))
+    plt.bar(labels, values, color=["red", "gray"])
+    plt.title("📊 Fraudster Node Changes")
+    plt.xlabel("Change Type")
+    plt.ylabel("Count")
+    plt.show()
+
+# Run fraudster change visualization
+plot_fraudster_changes(changes)
+
+import networkx as nx
+
+def visualize_fraud_network(graph_old, graph_new):
+    """Plots fraudster network changes highlighting new fraudsters."""
+    
+    plt.figure(figsize=(12,6))
+
+    # Extract fraudster nodes from both graphs
+    fraudsters_old = {node for node, data in graph_old.nodes(data=True) if data.get("type") == "fraudster"}
+    fraudsters_new = {node for node, data in graph_new.nodes(data=True) if data.get("type") == "fraudster"}
+
+    new_fraudsters = fraudsters_new - fraudsters_old  # Newly detected fraudsters
+    persisting_fraudsters = fraudsters_new & fraudsters_old  # Old fraudsters still active
+
+    # Draw old fraudster network
+    plt.subplot(1, 2, 1)
+    node_colors_old = ["red" if node in fraudsters_old else "blue" for node in graph_old.nodes]
+    nx.draw(graph_old, node_color=node_colors_old, with_labels=False, node_size=20, edge_color="gray", alpha=0.5)
+    plt.title("🔍 Fraudster Network (Old)")
+
+    # Draw new fraudster network
+    plt.subplot(1, 2, 2)
+    node_colors_new = [
+        "red" if node in new_fraudsters else 
+        "orange" if node in persisting_fraudsters else 
+        "blue" 
+        for node in graph_new.nodes
+    ]
+    nx.draw(graph_new, node_color=node_colors_new, with_labels=False, node_size=20, edge_color="gray", alpha=0.5)
+    plt.title("🔥 Fraudster Network (New) - New Fraudsters in Red")
+
+    plt.show()
+
+# Run fraud network visualization
+visualize_fraud_network(graph_old, graph_new)
