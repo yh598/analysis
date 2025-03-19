@@ -1,0 +1,62 @@
+import networkx as nx
+from collections import Counter
+
+def compare_graphs(graph_old, graph_new):
+    """
+    Compares two graphs and counts added/removed nodes and edges by type.
+    """
+    old_nodes = set(graph_old.nodes)
+    new_nodes = set(graph_new.nodes)
+    
+    added_nodes = new_nodes - old_nodes
+    removed_nodes = old_nodes - new_nodes
+
+    old_edges = set(graph_old.edges)
+    new_edges = set(graph_new.edges)
+
+    added_edges = new_edges - old_edges
+    removed_edges = old_edges - new_edges
+
+    # Categorize by node type (if node attributes exist)
+    node_types_old = Counter(nx.get_node_attributes(graph_old, "type").values())
+    node_types_new = Counter(nx.get_node_attributes(graph_new, "type").values())
+
+    # Categorize edges by type (if edge attributes exist)
+    edge_types_old = Counter(nx.get_edge_attributes(graph_old, "type").values())
+    edge_types_new = Counter(nx.get_edge_attributes(graph_new, "type").values())
+
+    changes_summary = {
+        "added_nodes": len(added_nodes),
+        "removed_nodes": len(removed_nodes),
+        "added_edges": len(added_edges),
+        "removed_edges": len(removed_edges),
+        "node_type_changes": {
+            "old": node_types_old,
+            "new": node_types_new
+        },
+        "edge_type_changes": {
+            "old": edge_types_old,
+            "new": edge_types_new
+        }
+    }
+
+    return changes_summary
+
+# Run comparison
+changes = compare_graphs(graph_old, graph_new)
+print(changes)
+
+import matplotlib.pyplot as plt
+
+def plot_changes(changes):
+    labels = ["Added Nodes", "Removed Nodes", "Added Edges", "Removed Edges"]
+    values = [changes["added_nodes"], changes["removed_nodes"], changes["added_edges"], changes["removed_edges"]]
+
+    plt.figure(figsize=(8,5))
+    plt.bar(labels, values, color=["green", "red", "blue", "orange"])
+    plt.title("Graph Changes Summary")
+    plt.xlabel("Change Type")
+    plt.ylabel("Count")
+    plt.show()
+
+plot_changes(changes)
