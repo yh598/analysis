@@ -1,0 +1,694 @@
+import networkx as nx
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+from collections import Counter
+
+def load_graph(file_path):
+    """Load a graph from a GraphML file."""
+    return nx.read_graphml(file_path)
+
+def compare_graphs(graph_old, graph_new):
+    """Compare two graphs and detect added/removed nodes and edges."""
+    
+    old_nodes = set(graph_old.nodes)
+    new_nodes = set(graph_new.nodes)
+
+    old_edges = set(graph_old.edges)
+    new_edges = set(graph_new.edges)
+
+    added_nodes = new_nodes - old_nodes
+    removed_nodes = old_nodes - new_nodes
+
+    added_edges = new_edges - old_edges
+    removed_edges = old_edges - new_edges
+
+    return {
+        "added_nodes": added_nodes,
+        "removed_nodes": removed_nodes,
+        "added_edges": added_edges,
+        "removed_edges": removed_edges
+    }
+
+def detect_fraud_rings(graph_new, min_size=3):
+    """Detect fraud rings (densely connected subgraphs)."""
+    cliques = list(nx.find_cliques(graph_new))
+    fraud_rings = [c for c in cliques if len(c) >= min_size]
+    
+    print(f"🔍 Detected Fraud Rings (Size ≥ {min_size}): {len(fraud_rings)}")
+    return fraud_rings
+
+def detect_anomalous_nodes(graph_new):
+    """Detect nodes with unusually high connections (potential fraudsters)."""
+    degrees = dict(graph_new.degree())
+    threshold = np.percentile(list(degrees.values()), 95)  # Flag top 5% as anomalous
+    anomalies = {node: degree for node, degree in degrees.items() if degree > threshold}
+    
+    print(f"⚠️ Detected {len(anomalies)} anomalous nodes (high-degree fraud risk)")
+    return anomalies
+
+def visualize_graph_changes(graph_old, graph_new, changes):
+    """Visualize added and removed nodes/edges in the graph."""
+    
+    plt.figure(figsize=(12, 6))
+
+    # Create a subgraph for visualization (limit nodes for clarity)
+    subgraph_old = graph_old.subgraph(list(graph_old.nodes)[:300])  
+    subgraph_new = graph_new.subgraph(list(graph_new.nodes)[:300])
+
+    # Visualization of old graph
+    plt.subplot(1, 2, 1)
+    nx.draw(subgraph_old, with_labels=False, node_size=20, edge_color="gray", alpha=0.5)
+    plt.title("📌 Graph Snapshot (Old)")
+
+    # Visualization of new graph (highlight new fraudsters in red)
+    plt.subplot(1, 2, 2)
+    node_colors = ["red" if node in changes["added_nodes"] else "blue" for node in subgraph_new.nodes]
+    nx.draw(subgraph_new, with_labels=False, node_size=20, edge_color="blue", alpha=0.5, node_color=node_colors)
+    plt.title("🚨 Graph Snapshot (New) - Fraudsters in Red")
+
+    plt.show()
+
+def visualize_fraud_rings(graph_new, fraud_rings):
+    """Visualize detected fraud rings."""
+    
+    plt.figure(figsize=(8, 6))
+    ring_sizes = [len(ring) for ring in fraud_rings]
+    plt.hist(ring_sizes, bins=10, color='red', alpha=0.7)
+    plt.xlabel("Fraud Ring Size")
+    plt.ylabel("Frequency")
+    plt.title("📊 Fraud Ring Distribution")
+    plt.show()
+
+def analyze_fraud_trends(graph_snapshots):
+    """Analyze fraud trends over multiple graph snapshots."""
+    
+    timestamps = []
+    fraudster_counts = []
+
+    for timestamp, graph in graph_snapshots.items():
+        fraud_count = sum(1 for node, attr in graph.nodes(data=True) if attr.get("type") == "fraudster")
+        timestamps.append(timestamp)
+        fraudster_counts.append(fraud_count)
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(timestamps, fraudster_counts, marker='o', linestyle='-', color='red')
+    plt.xlabel("Timestamp")
+    plt.ylabel("Number of Fraudsters")
+    plt.title("📈 Time-Series Fraud Trend Analysis")
+    plt.grid(True)
+    plt.show()
+
+def export_changes_to_csv(changes, anomalies, filename="graph_changes.csv"):
+    """Export incremental changes to a CSV file for reporting."""
+    
+    df = pd.DataFrame({
+        "Added_Nodes": list(changes["added_nodes"]) + [None] * (max(len(changes["added_nodes"]), len(changes["removed_nodes"])) - len(changes["added_nodes"])),
+        "Removed_Nodes": list(changes["removed_nodes"]) + [None] * (max(len(changes["added_nodes"]), len(changes["removed_nodes"])) - len(changes["removed_nodes"])),
+        "Added_Edges": list(changes["added_edges"]) + [None] * (max(len(changes["added_edges"]), len(changes["removed_edges"])) - len(changes["added_edges"])),
+        "Removed_Edges": list(changes["removed_edges"]) + [None] * (max(len(changes["added_edges"]), len(changes["removed_edges"])) - len(changes["removed_edges"]))
+    })
+
+    anomaly_df = pd.DataFrame(list(anomalies.items()), columns=["Node", "Degree"])
+    anomaly_df.to_csv("anomalous_nodes.csv", index=False)
+
+    df.to_csv(filename, index=False)
+    print(f"📁 Changes exported to {filename}")
+    print(f"📁 Anomalous nodes exported to anomalous_nodes.csv")
+
+# Load graphs from two different dates
+graph_old = load_graph("fraud_network_old.graphml")
+graph_new = load_graph("fraud_network_new.graphml")
+
+# Compare graphs and analyze differences
+changes = compare_graphs(graph_old, graph_new)
+
+# Detect anomalies (fraud risk nodes)
+anomalous_nodes = detect_anomalous_nodes(graph_new)
+
+# Detect fraud rings
+fraud_rings = detect_fraud_rings(graph_new)
+
+# Visualize the changes
+visualize_graph_changes(graph_old, graph_new, changes)
+
+# Visualize fraud rings
+visualize_fraud_rings(graph_new, fraud_rings)
+
+# Analyze fraud trends over multiple snapshots
+graph_snapshots = {
+    "2024-03-01": graph_old,
+    "2024-03-15": graph_new
+}
+analyze_fraud_trends(graph_snapshots)
+
+# Export results for further investigation
+export_changes_to_csv(changes, anomalous_nodes, filename="fraud_graph_changes.csv")
+
+
+
+import networkx as nx
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from tensorflow import keras
+from tensorflow.keras import layers
+from geopy.geocoders import Nominatim
+import requests
+import json
+import time
+
+# Load GraphML Files
+def load_graph(file_path):
+    return nx.read_graphml(file_path)
+
+# Compare Graphs for Incremental Changes
+def compare_graphs(graph_old, graph_new):
+    old_nodes, new_nodes = set(graph_old.nodes), set(graph_new.nodes)
+    old_edges, new_edges = set(graph_old.edges), set(graph_new.edges)
+
+    return {
+        "added_nodes": new_nodes - old_nodes,
+        "removed_nodes": old_nodes - new_nodes,
+        "added_edges": new_edges - old_edges,
+        "removed_edges": old_edges - new_edges
+    }
+
+# **1️⃣ Deep Learning for Fraud Anomaly Detection**
+def train_autoencoder(graph_new):
+    """Train an autoencoder to detect anomalous nodes (potential fraudsters)."""
+    nodes = list(graph_new.nodes)
+    degrees = np.array([graph_new.degree(n) for n in nodes]).reshape(-1, 1)
+
+    scaler = StandardScaler()
+    degrees_scaled = scaler.fit_transform(degrees)
+
+    # Define Autoencoder Model
+    input_dim = degrees_scaled.shape[1]
+    model = keras.Sequential([
+        layers.Dense(8, activation="relu", input_shape=(input_dim,)),
+        layers.Dense(4, activation="relu"),
+        layers.Dense(8, activation="relu"),
+        layers.Dense(input_dim, activation="sigmoid")
+    ])
+
+    model.compile(optimizer="adam", loss="mse")
+    model.fit(degrees_scaled, degrees_scaled, epochs=50, batch_size=16, verbose=0)
+
+    # Compute reconstruction errors
+    reconstructed = model.predict(degrees_scaled)
+    errors = np.mean(np.abs(degrees_scaled - reconstructed), axis=1)
+
+    # Flag anomalies with high reconstruction error
+    threshold = np.percentile(errors, 95)  # Top 5% as fraud risk
+    anomalous_nodes = {nodes[i]: errors[i] for i in range(len(errors)) if errors[i] > threshold}
+
+    print(f"⚠️ Deep Learning Detected {len(anomalous_nodes)} Fraudulent Nodes")
+    return anomalous_nodes
+
+# **2️⃣ Enhanced Geolocation & IP Reputation Analysis**
+def check_ip_reputation(ip):
+    """Query AbuseIPDB to check fraud reputation of an IP address."""
+    api_key = "your_abuseipdb_api_key"
+    url = f"https://api.abuseipdb.com/api/v2/check?ipAddress={ip}&maxAgeInDays=90"
+
+    headers = {"Key": api_key, "Accept": "application/json"}
+    response = requests.get(url, headers=headers)
+    data = json.loads(response.text)
+
+    return data.get("data", {}).get("abuseConfidenceScore", 0)
+
+def analyze_geolocation(ip_addresses):
+    """Fetch geolocation data and check fraud reputation for IP addresses."""
+    geolocator = Nominatim(user_agent="fraud_detection")
+    geo_data = {}
+
+    for ip in ip_addresses:
+        try:
+            location = geolocator.geocode(ip, timeout=10)
+            abuse_score = check_ip_reputation(ip)
+            geo_data[ip] = {
+                "latitude": location.latitude if location else None,
+                "longitude": location.longitude if location else None,
+                "fraud_score": abuse_score
+            }
+        except:
+            continue
+
+    return geo_data
+
+# **3️⃣ Real-Time Streaming Fraud Detection (Kafka Simulation)**
+def real_time_fraud_detection(graph_new):
+    """Simulate real-time fraud detection by processing new transactions."""
+    print("🚀 Starting Real-Time Fraud Detection...")
+
+    transactions = [
+        {"node": "fraudster_1", "amount": 5000, "ip": "192.168.1.1"},
+        {"node": "user_2", "amount": 200, "ip": "203.0.113.5"},
+        {"node": "fraudster_3", "amount": 10000, "ip": "145.34.23.89"},
+    ]
+
+    for tx in transactions:
+        if tx["amount"] > 4000:  # Flag transactions above threshold
+            fraud_score = check_ip_reputation(tx["ip"])
+            print(f"⚠️ High-Risk Transaction: {tx['node']} sent ${tx['amount']} (IP Fraud Score: {fraud_score})")
+
+        time.sleep(1)  # Simulate real-time processing
+
+# **4️⃣ Fraud Trend Analysis**
+def analyze_fraud_trends(graph_snapshots):
+    timestamps, fraudster_counts = [], []
+
+    for timestamp, graph in graph_snapshots.items():
+        fraud_count = sum(1 for _, attr in graph.nodes(data=True) if attr.get("type") == "fraudster")
+        timestamps.append(timestamp)
+        fraudster_counts.append(fraud_count)
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(timestamps, fraudster_counts, marker="o", linestyle="-", color="red")
+    plt.xlabel("Timestamp")
+    plt.ylabel("Number of Fraudsters")
+    plt.title("📈 Time-Series Fraud Trend Analysis")
+    plt.grid(True)
+    plt.show()
+
+# **5️⃣ Export Data**
+def export_data(changes, anomalies, filename="fraud_graph_changes.csv"):
+    df = pd.DataFrame({
+        "Added_Nodes": list(changes["added_nodes"]),
+        "Removed_Nodes": list(changes["removed_nodes"]),
+        "Added_Edges": list(changes["added_edges"]),
+        "Removed_Edges": list(changes["removed_edges"])
+    })
+
+    anomaly_df = pd.DataFrame(list(anomalies.items()), columns=["Node", "Anomaly_Score"])
+    anomaly_df.to_csv("anomalous_nodes.csv", index=False)
+
+    df.to_csv(filename, index=False)
+    print(f"📁 Changes exported to {filename}")
+    print(f"📁 Anomalous Nodes exported to anomalous_nodes.csv")
+
+# **Main Execution**
+graph_old = load_graph("fraud_network_old.graphml")
+graph_new = load_graph("fraud_network_new.graphml")
+
+# Compare Graph Snapshots
+changes = compare_graphs(graph_old, graph_new)
+
+# Deep Learning-Based Anomaly Detection
+anomalous_nodes = train_autoencoder(graph_new)
+
+# Real-Time Streaming Fraud Detection (Kafka Simulation)
+real_time_fraud_detection(graph_new)
+
+# Fetch Geolocation and IP Fraud Scores
+sample_ips = ["192.168.1.1", "203.0.113.5", "145.34.23.89"]
+geo_data = analyze_geolocation(sample_ips)
+print("📍 Geolocation & IP Reputation Data:", geo_data)
+
+# Analyze Fraud Trends Over Time
+graph_snapshots = {"2024-03-01": graph_old, "2024-03-15": graph_new}
+analyze_fraud_trends(graph_snapshots)
+
+# Export Data
+export_data(changes, anomalous_nodes)
+
+import networkx as nx
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import plotly.express as px
+from kafka import KafkaProducer, KafkaConsumer
+import json
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output
+from tensorflow import keras
+from tensorflow.keras import layers
+import requests
+import threading
+import time
+
+# **1️⃣ Load Graph Data**
+def load_graph(file_path):
+    return nx.read_graphml(file_path)
+
+# **2️⃣ Deep Learning-Based Anomaly Detection**
+def train_autoencoder(graph_new):
+    nodes = list(graph_new.nodes)
+    degrees = np.array([graph_new.degree(n) for n in nodes]).reshape(-1, 1)
+    
+    model = keras.Sequential([
+        layers.Dense(8, activation="relu", input_shape=(1,)),
+        layers.Dense(4, activation="relu"),
+        layers.Dense(8, activation="relu"),
+        layers.Dense(1, activation="sigmoid")
+    ])
+    
+    model.compile(optimizer="adam", loss="mse")
+    model.fit(degrees, degrees, epochs=50, batch_size=16, verbose=0)
+
+    errors = np.abs(degrees - model.predict(degrees))
+    threshold = np.percentile(errors, 95)
+    anomalous_nodes = {nodes[i]: errors[i][0] for i in range(len(errors)) if errors[i] > threshold}
+
+    print(f"⚠️ AI Detected {len(anomalous_nodes)} Anomalous Nodes")
+    return anomalous_nodes
+
+# **3️⃣ Kafka-Based Real-Time Fraud Detection**
+def start_kafka_stream():
+    producer = KafkaProducer(bootstrap_servers='localhost:9092', value_serializer=lambda v: json.dumps(v).encode('utf-8'))
+    
+    transactions = [
+        {"node": "fraudster_1", "amount": 5000, "ip": "192.168.1.1"},
+        {"node": "user_2", "amount": 200, "ip": "203.0.113.5"},
+        {"node": "fraudster_3", "amount": 10000, "ip": "145.34.23.89"},
+    ]
+
+    for tx in transactions:
+        producer.send("fraud_alerts", tx)
+        print(f"🚀 Sent transaction: {tx}")
+        time.sleep(2)  # Simulating real-time streaming
+
+def consume_kafka_stream():
+    consumer = KafkaConsumer("fraud_alerts", bootstrap_servers='localhost:9092', auto_offset_reset='earliest',
+                             value_deserializer=lambda x: json.loads(x.decode('utf-8')))
+
+    for message in consumer:
+        print(f"📥 Real-Time Fraud Alert: {message.value}")
+
+# **4️⃣ Fraud Dashboard using Dash**
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    html.H1("🚨 Real-Time Fraud Detection Dashboard"),
+    dcc.Graph(id="fraud_trend"),
+    dcc.Interval(id="update-interval", interval=5000, n_intervals=0)  # Refresh every 5 sec
+])
+
+@app.callback(Output("fraud_trend", "figure"), Input("update-interval", "n_intervals"))
+def update_fraud_trend(n):
+    df = pd.read_csv("fraud_scores.csv") if "fraud_scores.csv" in os.listdir() else pd.DataFrame()
+    
+    if df.empty:
+        return px.line(title="No Data Yet")
+    
+    fig = px.line(df, x="Node", y="Fraud_Score", title="📈 Fraud Risk Scores")
+    return fig
+
+# **5️⃣ Fetch External Fraud Intelligence**
+def check_ip_reputation(ip):
+    """Query AbuseIPDB for real-time fraud scores"""
+    api_key = "your_abuseipdb_api_key"
+    url = f"https://api.abuseipdb.com/api/v2/check?ipAddress={ip}&maxAgeInDays=90"
+
+    headers = {"Key": api_key, "Accept": "application/json"}
+    response = requests.get(url, headers=headers)
+    data = json.loads(response.text)
+
+    return data.get("data", {}).get("abuseConfidenceScore", 0)
+
+# **6️⃣ Execution: Start Kafka Stream and Dashboard**
+if __name__ == "__main__":
+    graph_old = load_graph("fraud_network_old.graphml")
+    graph_new = load_graph("fraud_network_new.graphml")
+
+    # Run Kafka Producer & Consumer in Background
+    threading.Thread(target=start_kafka_stream).start()
+    threading.Thread(target=consume_kafka_stream).start()
+    
+    # Run Fraud Dashboard
+    app.run_server(debug=True, use_reloader=False)
+
+import networkx as nx
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import plotly.express as px
+from kafka import KafkaProducer, KafkaConsumer
+import json
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output
+from torch_geometric.nn import GCNConv
+import torch
+import torch.nn.functional as F
+import threading
+import time
+
+# **1️⃣ Load Graph Data**
+def load_graph(file_path):
+    return nx.read_graphml(file_path)
+
+# **2️⃣ GNN-Based Fraud Detection**
+class FraudGNN(torch.nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(FraudGNN, self).__init__()
+        self.conv1 = GCNConv(input_dim, hidden_dim)
+        self.conv2 = GCNConv(hidden_dim, output_dim)
+
+    def forward(self, x, edge_index):
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)
+        x = self.conv2(x, edge_index)
+        return torch.sigmoid(x)
+
+def train_gnn(graph_new):
+    """Train a Graph Neural Network (GNN) for fraud detection"""
+    nodes = list(graph_new.nodes)
+    edges = np.array(list(graph_new.edges)).T
+
+    x = torch.tensor([[graph_new.degree(n)] for n in nodes], dtype=torch.float32)
+    edge_index = torch.tensor(edges, dtype=torch.long)
+
+    model = FraudGNN(1, 16, 1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    loss_fn = torch.nn.BCELoss()
+
+    # Generate synthetic labels (replace with actual fraud labels if available)
+    labels = torch.randint(0, 2, (len(nodes),), dtype=torch.float32)
+
+    for epoch in range(200):
+        optimizer.zero_grad()
+        output = model(x, edge_index).squeeze()
+        loss = loss_fn(output, labels)
+        loss.backward()
+        optimizer.step()
+
+    fraud_scores = {nodes[i]: float(output[i]) for i in range(len(nodes))}
+    print(f"⚠️ GNN Detected {sum(v > 0.8 for v in fraud_scores.values())} Fraudulent Nodes")
+    return fraud_scores
+
+# **3️⃣ Kafka-Based Real-Time Fraud Detection**
+def start_kafka_stream():
+    producer = KafkaProducer(bootstrap_servers='localhost:9092', value_serializer=lambda v: json.dumps(v).encode('utf-8'))
+    
+    transactions = [
+        {"node": "fraudster_1", "amount": 5000, "ip": "192.168.1.1"},
+        {"node": "user_2", "amount": 200, "ip": "203.0.113.5"},
+        {"node": "fraudster_3", "amount": 10000, "ip": "145.34.23.89"},
+    ]
+
+    for tx in transactions:
+        producer.send("fraud_alerts", tx)
+        print(f"🚀 Sent transaction: {tx}")
+        time.sleep(2)  # Simulating real-time streaming
+
+def consume_kafka_stream():
+    consumer = KafkaConsumer("fraud_alerts", bootstrap_servers='localhost:9092', auto_offset_reset='earliest',
+                             value_deserializer=lambda x: json.loads(x.decode('utf-8')))
+
+    for message in consumer:
+        print(f"📥 Real-Time Fraud Alert: {message.value}")
+
+# **4️⃣ Deployable Fraud Dashboard (AWS Ready)**
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    html.H1("🚨 Real-Time Fraud Detection Dashboard"),
+    dcc.Graph(id="fraud_trend"),
+    dcc.Interval(id="update-interval", interval=5000, n_intervals=0)  # Refresh every 5 sec
+])
+
+@app.callback(Output("fraud_trend", "figure"), Input("update-interval", "n_intervals"))
+def update_fraud_trend(n):
+    df = pd.read_csv("fraud_scores.csv") if "fraud_scores.csv" in os.listdir() else pd.DataFrame()
+    
+    if df.empty:
+        return px.line(title="No Data Yet")
+    
+    fig = px.line(df, x="Node", y="Fraud_Score", title="📈 Fraud Risk Scores")
+    return fig
+
+# **5️⃣ Cloud-Based Deployment on AWS (Optional)**
+def deploy_on_aws():
+    """Deploy the dashboard on AWS (Example using Flask for hosting)"""
+    from flask import Flask
+    from werkzeug.middleware.dispatcher import DispatcherMiddleware
+    from dash.long_callback import DiskcacheLongCallbackManager
+    import diskcache
+
+    cache = diskcache.Cache("./cache")
+    long_callback_manager = DiskcacheLongCallbackManager(cache)
+
+    server = Flask(__name__)
+    app.server = server
+
+    app.run_server(host="0.0.0.0", port=8080, debug=True)
+
+# **6️⃣ Execution: Start Kafka Stream and Dashboard**
+if __name__ == "__main__":
+    graph_old = load_graph("fraud_network_old.graphml")
+    graph_new = load_graph("fraud_network_new.graphml")
+
+    # Train GNN-Based Fraud Detection
+    fraud_scores = train_gnn(graph_new)
+    
+    # Run Kafka Producer & Consumer in Background
+    threading.Thread(target=start_kafka_stream).start()
+    threading.Thread(target=consume_kafka_stream).start()
+    
+    # Deploy on AWS (Optional)
+    threading.Thread(target=deploy_on_aws).start()
+    
+    # Run Fraud Dashboard
+    app.run_server(debug=True, use_reloader=False)
+
+import networkx as nx
+import numpy as np
+import pandas as pd
+import plotly.express as px
+from kafka import KafkaProducer, KafkaConsumer
+import json
+import torch
+import torch.nn.functional as F
+from torch_geometric.nn import GCNConv
+import boto3
+from flask import Flask, request, jsonify
+import threading
+import time
+
+# **1️⃣ Load Graph Data**
+def load_graph(file_path):
+    return nx.read_graphml(file_path)
+
+# **2️⃣ GNN-Based Fraud Detection**
+class FraudGNN(torch.nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(FraudGNN, self).__init__()
+        self.conv1 = GCNConv(input_dim, hidden_dim)
+        self.conv2 = GCNConv(hidden_dim, output_dim)
+
+    def forward(self, x, edge_index):
+        x = self.conv1(x, edge_index)
+        x = F.relu(x)
+        x = self.conv2(x, edge_index)
+        return torch.sigmoid(x)
+
+def train_gnn(graph_new):
+    """Train a Graph Neural Network (GNN) for fraud detection"""
+    nodes = list(graph_new.nodes)
+    edges = np.array(list(graph_new.edges)).T
+
+    x = torch.tensor([[graph_new.degree(n)] for n in nodes], dtype=torch.float32)
+    edge_index = torch.tensor(edges, dtype=torch.long)
+
+    model = FraudGNN(1, 16, 1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    loss_fn = torch.nn.BCELoss()
+
+    labels = torch.randint(0, 2, (len(nodes),), dtype=torch.float32)
+
+    for epoch in range(200):
+        optimizer.zero_grad()
+        output = model(x, edge_index).squeeze()
+        loss = loss_fn(output, labels)
+        loss.backward()
+        optimizer.step()
+
+    fraud_scores = {nodes[i]: float(output[i]) for i in range(len(nodes))}
+    print(f"⚠️ GNN Detected {sum(v > 0.8 for v in fraud_scores.values())} Fraudulent Nodes")
+    return fraud_scores
+
+# **3️⃣ Kafka-Based Real-Time Fraud Detection**
+def start_kafka_stream():
+    producer = KafkaProducer(bootstrap_servers='localhost:9092', value_serializer=lambda v: json.dumps(v).encode('utf-8'))
+    
+    transactions = [
+        {"node": "fraudster_1", "amount": 5000, "ip": "192.168.1.1"},
+        {"node": "user_2", "amount": 200, "ip": "203.0.113.5"},
+        {"node": "fraudster_3", "amount": 10000, "ip": "145.34.23.89"},
+    ]
+
+    for tx in transactions:
+        producer.send("fraud_alerts", tx)
+        print(f"🚀 Sent transaction: {tx}")
+        time.sleep(2)  # Simulating real-time streaming
+
+def consume_kafka_stream():
+    consumer = KafkaConsumer("fraud_alerts", bootstrap_servers='localhost:9092', auto_offset_reset='earliest',
+                             value_deserializer=lambda x: json.loads(x.decode('utf-8')))
+
+    for message in consumer:
+        print(f"📥 Real-Time Fraud Alert: {message.value}")
+
+# **4️⃣ Serverless Fraud Detection API (Flask & AWS Lambda)**
+app = Flask(__name__)
+
+@app.route("/predict", methods=["POST"])
+def predict():
+    """Predict fraud score for a given transaction using GNN"""
+    data = request.json
+    node = data.get("node", "")
+    amount = data.get("amount", 0)
+
+    fraud_score = fraud_scores.get(node, 0)
+    response = {
+        "node": node,
+        "amount": amount,
+        "fraud_score": fraud_score,
+        "is_fraud": fraud_score > 0.8
+    }
+    
+    # Store fraud alerts in AWS S3
+    s3_client.put_object(Bucket="fraud-detection-alerts", Key=f"alert_{node}.json", Body=json.dumps(response))
+
+    return jsonify(response)
+
+# **5️⃣ Deploy Fraud Detection API on AWS Lambda**
+def deploy_on_lambda():
+    """Deploys the Flask fraud detection API as a Lambda function"""
+    lambda_client = boto3.client("lambda", region_name="us-east-1")
+    
+    with open("fraud_detection_lambda.zip", "rb") as f:
+        lambda_code = f.read()
+    
+    response = lambda_client.create_function(
+        FunctionName="FraudDetectionAPI",
+        Runtime="python3.8",
+        Role="arn:aws:iam::123456789012:role/execution_role",
+        Handler="fraud_detection.lambda_handler",
+        Code={"ZipFile": lambda_code},
+        Timeout=15
+    )
+    
+    print(f"🚀 AWS Lambda Deployment Complete: {response}")
+
+# **6️⃣ AWS S3 Integration for Fraud Alerts**
+s3_client = boto3.client("s3", region_name="us-east-1")
+s3_client.create_bucket(Bucket="fraud-detection-alerts")
+
+# **7️⃣ Execution: Start Kafka Stream, API, and Deploy on AWS**
+if __name__ == "__main__":
+    graph_old = load_graph("fraud_network_old.graphml")
+    graph_new = load_graph("fraud_network_new.graphml")
+
+    fraud_scores = train_gnn(graph_new)
+
+    threading.Thread(target=start_kafka_stream).start()
+    threading.Thread(target=consume_kafka_stream).start()
+    
+    threading.Thread(target=deploy_on_lambda).start()
+
+    app.run(host="0.0.0.0", port=8080, debug=True)
