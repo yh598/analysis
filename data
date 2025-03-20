@@ -1,0 +1,103 @@
+import os
+import pandas as pd
+import networkx as nx
+import datetime
+import re
+
+# Define paths
+source_folder = "/path/to/source/folder"  # Replace with actual folder containing CSV files
+output_folder = "/path/to/output/folder"  # Replace with actual output folder
+
+# Ensure output folder exists
+os.makedirs(output_folder, exist_ok=True)
+
+# Define date range for filtering (YYYY-MM-DD format)
+start_date = datetime.datetime.strptime("2025-02-10", "%Y-%m-%d")  # Modify as needed
+end_date = datetime.datetime.strptime("2025-03-15", "%Y-%m-%d")  # Modify as needed
+
+### Step 1: Parsing and Processing Functions ###
+def parse_rel(col):
+    """Parses key-value relationships stored as text in columns."""
+    input_str = col.strip("{}")
+    pattern = r'(\w+):\s*([^,]+)'
+    matches = re.findall(pattern, input_str)
+
+    result_dict = {}
+    for key, value in matches:
+        value = value.strip()
+        if '[' in value and ']' in value:  # Handle lists
+            value = value.strip("[]").split(",")
+            value = [v.strip() for v in value]
+        result_dict[key] = value
+    return result_dict
+
+def parse_list(value):
+    """Parses list-like values stored as text."""
+    return value.strip("[]").split(",")
+
+### Step 2: Construct Network Graph ###
+def build_graph_from_csv(csv_file):
+    """Builds a fraud detection graph from extracted CSV data."""
+    try:
+        df = pd.read_csv(csv_file)
+
+        # Apply parsing functions to relevant columns
+        if 'relationships' in df.columns:
+            df['relationships'] = df['relationships'].apply(parse_rel)
+        if 'fraud_type' in df.columns:
+            df['fraud_type'] = df['fraud_type'].apply(parse_list)
+        if 'potential_fraudster_assessments' in df.columns:
+            df['potential_fraudster_assessments'] = df['potential_fraudster_assessments'].apply(parse_list)
+
+        # Initialize a directed graph
+        G = nx.DiGraph()
+
+        # Extract relationships and construct the graph
+        for _, row in df.iterrows():
+            fraudster = row["fraudster_id"]
+            potential_fraudster = row["potential_fraudster_id"]
+            G.add_edge(fraudster, potential_fraudster, relationships=row.get('relationships', {}))
+
+        return G
+
+    except Exception as e:
+        print(f"Error processing {csv_file}: {e}")
+        return None
+
+### Step 3: Generate GML File ###
+def generate_gml(graph, output_folder, date_str):
+    """Saves the graph in GML format."""
+    gml_file = os.path.join(output_folder, f"audience_{date_str}.gml")
+    nx.write_gml(graph, gml_file)
+    print(f"GML file generated: {gml_file}")
+
+### Step 4: Execute the Full Pipeline ###
+def main():
+    # List and filter CSV files based on date range
+    csv_files = []
+    
+    for file_name in os.listdir(source_folder):
+        if file_name.startswith("syntheticData-") and file_name.endswith(".csv"):
+            # Extract date from filename (syntheticData-YYYY-MM-DD.csv)
+            date_str = file_name.split("syntheticData-")[1].split(".csv")[0]
+            try:
+                file_date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                if start_date <= file_date <= end_date:
+                    csv_files.append((file_date, os.path.join(source_folder, file_name)))
+            except ValueError:
+                print(f"Skipping file {file_name}: Invalid date format")
+
+    # Sort CSV files by date
+    csv_files.sort()
+
+    for file_date, csv_file in csv_files:
+        # Build Graph
+        G = build_graph_from_csv(csv_file)
+        if G:
+            # Generate GML output
+            generate_gml(G, output_folder, file_date.strftime("%Y-%m-%d"))
+
+    print("Filtered GML file generation completed.")
+
+if __name__ == "__main__":
+    main()
