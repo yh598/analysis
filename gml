@@ -274,3 +274,14 @@ for date_str in date_strings:
         save_pickle(pickle, G, date_str)
 
 print("Processing complete for all dates.")
+
+@app.cell
+def load_data(pd, date_str):
+    filename = f"/mnt/data/syntheticData-{date_str}.csv"
+    
+    try:
+        dat = pd.read_csv(filename, dtype=str)
+        return dat  # Ensure this is inside the function
+    except FileNotFoundError:
+        print(f"File {filename} not found. Skipping...")
+        return pd.DataFrame()  # Return an empty DataFrame if the file is missing
