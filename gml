@@ -107,3 +107,21 @@ def save_pickle(pickle, rg, date_str):
         pickle.dump(rg, file)
     
     return f"Pickle file saved as {pkl_filename}"
+
+
+from datetime import datetime, timedelta
+
+# Define start and end date (modify these values)
+start_date = "2025-02-16"
+end_date = "2025-03-06"
+
+# Convert to datetime objects
+start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+
+# Generate a list of date strings for all dates in the range
+date_strings = [(start_dt + timedelta(days=i)).strftime("%Y-%m-%d") 
+                for i in range((end_dt - start_dt).days + 1)]
+
+# Print all generated date strings for verification
+print("Generated date strings:", date_strings)
