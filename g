@@ -289,3 +289,79 @@ for date in date_range:
     if not daily_data.empty:
         process_and_save_graph(daily_data, date_str)
 
+
+import pandas as pd
+import networkx as nx
+import re
+from datetime import datetime, timedelta
+
+# Define start and end dates
+start_date = "2025-03-01"  # Adjust as needed
+end_date = "2025-03-15"    # Adjust as needed
+
+# Generate date range
+date_range = pd.date_range(start=start_date, end=end_date)
+
+def parse_rel(col):
+    """Parses relationships from the given column."""
+    input_str = col.strip('{}')
+    pattern = r'(\w+)=(\[[^=]*\])'
+    matches = re.findall(pattern, input_str)
+    
+    result_dict = {}
+    for key, value in matches:
+        value = value.strip('[]')
+        value = [item.strip() for item in value.split(',')] if ',' in value else re.sub(r'~', ' ', value)
+        result_dict[key] = value
+    return result_dict
+
+def parse_list(value):
+    """Parses list values."""
+    return value.strip('[]').split(',')
+
+for date in date_range:
+    file_date = date.strftime('%Y-%m-%d')
+    file_name = f"syntheticData-{file_date}.csv"
+    
+    try:
+        # Load dataset
+        dat = pd.read_csv(file_name, dtype=str)
+        dat['relationships'] = dat['relationships'].apply(parse_rel)
+        dat['fraud_type'] = dat['fraud_type'].apply(parse_list)
+        dat['potential_fraudster_assessments'] = dat['potential_fraudster_assessments'].apply(parse_list)
+        
+        # Initialize graph
+        G = nx.DiGraph()
+        
+        def proc_record(fraudster_nd, potential_fraudster_nd, id_type, id_val):
+            """Adds nodes and edges for fraudster relationships."""
+            node_key = f"{id_type}_{id_val}"
+            G.add_node(node_key, type=id_type, label=node_key)
+            G.add_edge(fraudster_nd, node_key, has=id_type)
+            G.add_edge(potential_fraudster_nd, node_key, has=id_type)
+
+        for _, row in dat.iterrows():
+            fraudster_id = row['fraudster']
+            potential_fraudster_id = row['potential_fraudster']
+            
+            fraudster_nd = f"fraudster_{fraudster_id}"
+            potential_fraudster_nd = f"member_{potential_fraudster_id}"
+            
+            G.add_node(fraudster_nd, type='fraudster', label=fraudster_nd)
+            G.add_node(potential_fraudster_nd, type='member', label=potential_fraudster_nd)
+            
+            for id_type, val in row['relationships'].items():
+                if isinstance(val, list):
+                    for id_val in val:
+                        proc_record(fraudster_nd, potential_fraudster_nd, id_type, id_val)
+                else:
+                    proc_record(fraudster_nd, potential_fraudster_nd, id_type, val)
+
+        # Save graph to GML format
+        gml_filename = f"fraud_network-{file_date}.gml"
+        nx.write_gml(G, gml_filename)
+        print(f"Saved: {gml_filename}")
+
+    except FileNotFoundError:
+        print(f"File not found: {file_name}, skipping...")
+
