@@ -62,3 +62,48 @@ if gz_files:
     tools.display_dataframe_to_user(name="Sample Data Preview", dataframe=sample_df)
 else:
     print("No files found within the specified date range.")
+
+@app.cell
+def load_data(pd, date_str):
+    # Construct the filename dynamically using date_str
+    filename = f"syntheticData-{date_str}.csv"
+    
+    # Load the corresponding CSV file
+    dat = pd.read_csv(filename, dtype=str)
+    
+    return dat
+
+@app.cell
+def save_html(G, Sigma, date_str):
+    # Generate dynamic filename using date_str
+    html_filename = f"audience-{date_str}.html"
+    
+    Sigma.write_html(
+        graph=G,
+        path=html_filename,
+        fullscreen=True,
+        node_size=G.degree,
+        # raw_node_pictogram=get_node_icon,
+        # node_color=get_node_color,
+        node_border_color_from="node",
+        edge_size="count"
+    )
+    return f"HTML file saved as {html_filename}"
+
+@app.cell
+def save_gml(G, nx, date_str):
+    # Generate dynamic filename using date_str
+    gml_filename = f"audience-{date_str}.gml"
+    
+    nx.write_gml(G, gml_filename)
+    return f"GML file saved as {gml_filename}"
+
+@app.cell
+def save_pickle(pickle, rg, date_str):
+    # Generate dynamic filename using date_str
+    pkl_filename = f"audience-{date_str}.pkl"
+    
+    with open(pkl_filename, 'wb') as file:
+        pickle.dump(rg, file)
+    
+    return f"Pickle file saved as {pkl_filename}"
