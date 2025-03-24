@@ -125,3 +125,22 @@ date_strings = [(start_dt + timedelta(days=i)).strftime("%Y-%m-%d")
 
 # Print all generated date strings for verification
 print("Generated date strings:", date_strings)
+
+
+for date_str in date_strings:
+    print(f"Processing data for {date_str}...")
+    
+    # Load Data
+    df = load_data(pd, date_str)
+    
+    # If data exists, display it
+    if not df.empty:
+        display(df, mo, quak)
+
+        # Process Graph
+        G = process_graph(df, nx)
+
+        # Save Outputs
+        save_gml(G, nx, date_str)
+        save_html(G, Sigma, date_str)
+        save_pickle(pickle, G, date_str)
