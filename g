@@ -44,6 +44,7 @@ def __(pd, datetime, timedelta):
     
     data_frames = {}
     current_date = start_date
+    
     while current_date <= end_date:
         date_str = current_date.strftime("%Y-%m-%d")
         csv_filename = f"syntheticData-{date_str}.csv"
@@ -53,14 +54,24 @@ def __(pd, datetime, timedelta):
             print(f"Warning: Data file {csv_filename} not found. Skipping {date_str}.")
         except Exception as e:
             print(f"Warning: Could not read {csv_filename} due to {e}. Skipping {date_str}.")
+        
         current_date += timedelta(days=1)
-    return (data_frames,)
+    
+    return (data_frames, start_date, end_date)
 
 
 @app.cell
-def __(data_frames, nx):
-    for date_str, dat in data_frames.items():
+def __(data_frames, start_date, end_date, nx, timedelta):
+    current_date = start_date
+    
+    while current_date <= end_date:
+        date_str = current_date.strftime("%Y-%m-%d")
+        if date_str not in data_frames:
+            current_date += timedelta(days=1)
+            continue
+        
         print(f"Processing data for {date_str}")
+        dat = data_frames[date_str]
         G = nx.DiGraph()
 
         def proc_record(fraudster_nd, potential_fraudster_nd, id_type, id_val):
@@ -87,4 +98,7 @@ def __(data_frames, nx):
         gml_filename = f"audience-{date_str.replace('-', '')}.gml"
         nx.write_gml(G, gml_filename)
         print(f"Saved {gml_filename}")
+        
+        current_date += timedelta(days=1)
+    
     return
