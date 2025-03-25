@@ -66,3 +66,89 @@ if graph_snapshots:
     analyze_fraud_trends(graph_snapshots)
 else:
     print("No graph snapshots found.")
+
+import os
+import re
+import networkx as nx
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+# Directory containing GML snapshots
+snapshot_dir = "./"  # Change this if files are stored elsewhere
+processed_snapshots_file = "processed_snapshots.txt"
+
+# Function to read already processed snapshots
+def get_processed_snapshots():
+    if os.path.exists(processed_snapshots_file):
+        with open(processed_snapshots_file, "r") as file:
+            return set(file.read().splitlines())  # Read existing snapshots
+    return set()
+
+# Function to save processed snapshots
+def save_processed_snapshot(snapshot_name):
+    with open(processed_snapshots_file, "a") as file:
+        file.write(snapshot_name + "\n")  # Append new snapshot
+
+# Function to dynamically load only new snapshots
+def load_new_graph_snapshots():
+    processed_snapshots = get_processed_snapshots()
+    snapshots = {}
+
+    # List all GML files in the directory
+    files = os.listdir(snapshot_dir)
+
+    # Identify new GML files
+    gml_files = [f for f in files if re.match(r"audience-\d{4}-\d{2}-\d{2}\.gml", f)]
+    new_files = [f for f in gml_files if f not in processed_snapshots]
+
+    # Sort new files in chronological order
+    new_files = sorted(new_files, key=lambda f: datetime.strptime(f[9:19], "%Y-%m-%d"))
+
+    # Load new snapshots
+    for file in new_files:
+        try:
+            date_str = file[9:19]  # Extract YYYY-MM-DD
+            graph = nx.read_gml(os.path.join(snapshot_dir, file))
+            snapshots[date_str] = graph
+            save_processed_snapshot(file)  # Mark as processed
+            print(f"Loaded new snapshot: {file}")
+        except Exception as e:
+            print(f"Error loading {file}: {e}")
+
+    return snapshots
+
+# Function to analyze fraud trends over time
+def analyze_fraud_trends(graph_snapshots):
+    """
+    Analyze fraud trends over multiple graph snapshots.
+    """
+    timestamps = []
+    fraudster_counts = []
+
+    for timestamp, graph in graph_snapshots.items():
+        # Count fraudster nodes
+        fraud_count = sum(1 for _, attr in graph.nodes(data=True) if attr.get("type") == "fraudster")
+        timestamps.append(timestamp)
+        fraudster_counts.append(fraud_count)
+
+    # Convert timestamps to datetime for better plotting
+    timestamps = [datetime.strptime(ts, "%Y-%m-%d") for ts in timestamps]
+
+    # Plot the trend
+    plt.figure(figsize=(10, 5))
+    plt.plot(timestamps, fraudster_counts, marker="o", linestyle="-", color="red")
+    plt.xlabel("Date")
+    plt.ylabel("Number of Fraudsters")
+    plt.title("Time-Series Fraud Trend Analysis")
+    plt.grid(True)
+    plt.xticks(rotation=45)
+    plt.show()
+
+# Load new snapshots dynamically
+new_graph_snapshots = load_new_graph_snapshots()
+
+# Run fraud trend analysis if new snapshots exist
+if new_graph_snapshots:
+    analyze_fraud_trends(new_graph_snapshots)
+else:
+    print("No new snapshots found. Already up to date.")
