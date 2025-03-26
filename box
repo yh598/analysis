@@ -29,3 +29,36 @@ for filename in os.listdir(input_dir):
                 print(f'Compressed: {output_path}')
         except Exception as e:
             print(f'Error processing {filename}: {e}')
+
+import os
+import gzip
+import shutil
+from datetime import datetime
+
+# Define input/output paths
+input_dir = '/mnt/data'
+output_dir = r'C:\Users\PL6T562\Box\Data Science Delivery (DSD)\DSD Identity Analytics\audience_file_analysis\data\graphml'
+os.makedirs(output_dir, exist_ok=True)
+
+# Set date range
+start_date = datetime.strptime('2025-03-01', '%Y-%m-%d')
+end_date = datetime.strptime('2025-03-09', '%Y-%m-%d')
+
+# Loop through .gml files
+for filename in os.listdir(input_dir):
+    if filename.startswith('audience-') and filename.endswith('.gml'):
+        try:
+            # Extract full date string from filename
+            date_str = filename.replace('audience-', '').replace('.gml', '')
+            file_date = datetime.strptime(date_str, '%Y-%m-%d')
+
+            if start_date <= file_date <= end_date:
+                input_path = os.path.join(input_dir, filename)
+                output_path = os.path.join(output_dir, filename + '.gz')
+
+                with open(input_path, 'rb') as f_in, gzip.open(output_path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+
+                print(f'Compressed: {output_path}')
+        except Exception as e:
+            print(f'Error processing {filename}: {e}')
