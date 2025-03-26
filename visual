@@ -1,0 +1,106 @@
+import os
+import re
+import networkx as nx
+import matplotlib.pyplot as plt
+import pandas as pd
+from datetime import datetime
+
+# Directory containing GML snapshots
+snapshot_dir = "./"  # Change if needed
+processed_snapshots_file = "processed_snapshots.txt"
+fraud_trends_file = "fraud_trends.csv"
+
+# Function to get already processed snapshots
+def get_processed_snapshots():
+    if os.path.exists(processed_snapshots_file):
+        with open(processed_snapshots_file, "r") as file:
+            return set(file.read().splitlines())  # Read existing snapshots
+    return set()
+
+# Function to save a processed snapshot
+def save_processed_snapshot(snapshot_name):
+    with open(processed_snapshots_file, "a") as file:
+        file.write(snapshot_name + "\n")  # Append new snapshot
+
+# Function to load new graph snapshots within a date range
+def load_graph_snapshots(start_date, end_date):
+    processed_snapshots = get_processed_snapshots()
+    snapshots = {}
+
+    # List all files in the directory
+    files = os.listdir(snapshot_dir)
+
+    # Identify GML files matching the date range
+    gml_files = [
+        f for f in files if re.match(r"audience-\d{4}-\d{2}-\d{2}\.gml", f) and f not in processed_snapshots
+    ]
+    sorted_files = sorted(gml_files, key=lambda f: datetime.strptime(f[9:19], "%Y-%m-%d"))
+
+    # Filter by date range
+    sorted_files = [f for f in sorted_files if start_date <= f[9:19] <= end_date]
+
+    for file in sorted_files:
+        try:
+            date_str = file[9:19]  # Extract YYYY-MM-DD
+            graph = nx.read_gml(os.path.join(snapshot_dir, file))
+            snapshots[date_str] = graph
+            save_processed_snapshot(file)  # Mark as processed
+            print(f"Loaded snapshot: {file}")
+        except Exception as e:
+            print(f"Error loading {file}: {e}")
+
+    return snapshots
+
+# Function to analyze fraud trends and save results
+def analyze_fraud_trends(graph_snapshots):
+    timestamps = []
+    fraudster_counts = []
+
+    for timestamp, graph in graph_snapshots.items():
+        fraud_count = sum(1 for _, attr in graph.nodes(data=True) if attr.get("type") == "fraudster")
+        timestamps.append(timestamp)
+        fraudster_counts.append(fraud_count)
+
+    # Convert timestamps to datetime
+    timestamps = [datetime.strptime(ts, "%Y-%m-%d") for ts in timestamps]
+
+    # Save results to CSV
+    df = pd.DataFrame({"timestamp": timestamps, "fraudster_count": fraudster_counts})
+    
+    if os.path.exists(fraud_trends_file):
+        df.to_csv(fraud_trends_file, mode='a', header=False, index=False)  # Append new data
+    else:
+        df.to_csv(fraud_trends_file, index=False)  # Create new file
+
+    print("Fraud trend data saved.")
+
+# Function to visualize fraud trends dynamically
+def plot_fraud_trends():
+    if not os.path.exists(fraud_trends_file):
+        print("No fraud trend data available yet.")
+        return
+
+    df = pd.read_csv(fraud_trends_file, parse_dates=["timestamp"])
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(df["timestamp"], df["fraudster_count"], marker="o", linestyle="-", color="red")
+    plt.xlabel("Date")
+    plt.ylabel("Number of Fraudsters")
+    plt.title("Time-Series Fraud Trend Analysis")
+    plt.grid(True)
+    plt.xticks(rotation=45)
+    plt.show()
+
+# Define date range (adjust dynamically as needed)
+start_date = "2025-01-01"
+end_date = "2025-03-12"
+
+# Load snapshots in chunks
+graph_snapshots = load_graph_snapshots(start_date, end_date)
+
+# Analyze new data if available
+if graph_snapshots:
+    analyze_fraud_trends(graph_snapshots)
+    plot_fraud_trends()  # Refresh visualization
+else:
+    print("No new snapshots found within the selected date range.")
