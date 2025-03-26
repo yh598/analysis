@@ -1,0 +1,31 @@
+import os
+import gzip
+import shutil
+from datetime import datetime
+
+# Define input/output paths
+input_dir = '/mnt/data'  # update if needed
+output_dir = r'C:\Users\PL6T562\Box\Data Science Delivery (DSD)\DSD Identity Analytics\audience_file_analysis\data\graphml'
+os.makedirs(output_dir, exist_ok=True)
+
+# Set your desired date range
+start_date = datetime.strptime('2024-12-10', '%Y-%m-%d')
+end_date = datetime.strptime('2024-12-20', '%Y-%m-%d')
+
+# Loop through files
+for filename in os.listdir(input_dir):
+    if filename.startswith('audience-') and filename.endswith('.gml'):
+        try:
+            date_str = filename.split('-')[1].replace('.gml', '')
+            file_date = datetime.strptime(date_str, '%Y-%m-%d')
+
+            if start_date <= file_date <= end_date:
+                input_path = os.path.join(input_dir, filename)
+                output_path = os.path.join(output_dir, filename + '.gz')
+
+                with open(input_path, 'rb') as f_in, gzip.open(output_path, 'wb') as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+
+                print(f'Compressed: {output_path}')
+        except Exception as e:
+            print(f'Error processing {filename}: {e}')
