@@ -1,0 +1,82 @@
+from mvsuite.scrypp import hive_connection
+import pandas as pd
+import yaml
+import mvsuite.model_trainer as ar
+import mvsuite.mn_alert as ma
+from random import randint
+from datetime import datetime
+
+# Helper: generate list of yyyymm values
+def generate_months(start_yyyymm, end_yyyymm):
+    start = datetime.strptime(str(start_yyyymm), "%Y%m")
+    end = datetime.strptime(str(end_yyyymm), "%Y%m")
+    while start <= end:
+        yield start.strftime("%Y%m")
+        if start.month == 12:
+            start = start.replace(year=start.year + 1, month=1)
+        else:
+            start = start.replace(month=start.month + 1)
+
+# Iterate through months
+for yyyymm in generate_months(202404, 202503):
+    print(f"Processing month: {yyyymm}")
+
+    # Load monthly YAML config
+    with open(f'/mnt/code/frd-destro-digital-model/autoretrain_masterconfigs_{yyyymm}.yaml') as file:
+        master_config = yaml.full_load(file)
+
+    # Get model inputs
+    model_inputs = master_config['model_inputs']
+    if 'agg_columns' in master_config:
+        for col in master_config['agg_columns'].values():
+            if col not in model_inputs:
+                model_inputs.append(col)
+
+    # Hive connection
+    hive_conn = hive_connection(
+        'fraud_data_science_mgd',
+        'prod',
+        platform='cdp'
+    )
+
+    # Timestamp for run
+    run_id = randint(10000, 99999)
+    run_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # -------- FRAUD DATA --------
+    kwargs = master_config['sample_func_params']['train']
+    kwargs['additional_statement'] = '"fraud = 1"'
+    inputs_tgt_tbl = master_config['inputs_target_table']
+    targets = master_config['targets']
+
+    sample_func = master_config['sample_func']
+    fraud = getattr(ar, sample_func)(
+        inputs_tgt_tbl,
+        model_inputs,
+        hive_conn,
+        target=targets[master_config['train_target']],
+        **kwargs
+    )
+
+    fraud = fraud.dropna(how='any', axis=0)
+    fraud['month'] = yyyymm
+    fraud.to_csv(f'/mnt/code/frd-destro-digital-model/fraud_data_{yyyymm}.csv', index=False)
+
+    # -------- NON-FRAUD DATA --------
+    kwargs['additional_statement'] = '"fraud = 0 AND rand() < 0.01"'
+    inputs_tgt_tbl = master_config['inputs_target_table']
+    targets = master_config['targets']
+
+    non_fraud = getattr(ar, sample_func)(
+        inputs_tgt_tbl,
+        model_inputs,
+        hive_conn,
+        target=targets[master_config['train_target']],
+        **kwargs
+    )
+
+    non_fraud = non_fraud.dropna(how='any', axis=0)
+    non_fraud['month'] = yyyymm
+    non_fraud.to_csv(f'/mnt/code/frd-destro-digital-model/non_fraud_data_{yyyymm}.csv', index=False)
+
+    print(f"Completed: {yyyymm}\n")
