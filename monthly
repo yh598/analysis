@@ -1,3 +1,44 @@
+from datetime import datetime, timedelta
+
+def month_range(start, end):
+    start_date = datetime.strptime(start, "%Y%m")
+    end_date = datetime.strptime(end, "%Y%m")
+    while start_date <= end_date:
+        yield start_date.strftime("%Y%m")
+        month = start_date.month + 1
+        year = start_date.year + (month - 1) // 12
+        month = (month - 1) % 12 + 1
+        start_date = datetime(year, month, 1)
+
+def make_pd_id(x):
+    x = str(x)
+    return x[0] + str(len(x)) + x[-1]
+
+for ym in month_range("202404", "202503"):
+    fraud_file = f'fraud_data_{ym}.csv'
+    nonfraud_file = f'non_fraud_data_{ym}.csv'
+    
+    try:
+        df_fraud = pd.read_csv(fraud_file)
+        df_nonfraud = pd.read_csv(nonfraud_file)
+    except FileNotFoundError:
+        print(f"Missing data for {ym}, skipping...")
+        continue
+
+    df = pd.concat([df_fraud, df_nonfraud], ignore_index=True)
+    df['USAA_PARTY_PD_ID'] = df.usaa_party_pd_id.map(lambda x: len(str(x)))
+    df['USAA_PARTY_PD_ID'] = df.usaa_party_pd_id.apply(make_pd_id)
+
+    app1_spkdf = sprk.create_dataframe(data=df).cache_result()
+    schema = sprk.get_current_schema().replace('"', '').replace("'", '')
+    database = sprk.get_current_database().replace('"', '').replace("'", '')
+    table = f'DESTRO_DIGITAL_{ym}'
+    full_table_name = f'{database}.{schema}.{table}'
+    
+    app1_spkdf.write.save_as_table(full_table_name, mode='overwrite')
+    print(f"Processed and saved: {full_table_name}")
+
+
 from mvsuite.scrypp import hive_connection
 import pandas as pd
 import yaml
