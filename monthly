@@ -1,3 +1,70 @@
+import pandas as pd
+
+def month_range(start, end):
+    from datetime import datetime
+    start_date = datetime.strptime(start, "%Y%m")
+    end_date = datetime.strptime(end, "%Y%m")
+    while start_date <= end_date:
+        yield start_date.strftime("%Y%m")
+        month = start_date.month + 1
+        year = start_date.year + (month - 1) // 12
+        month = (month - 1) % 12 + 1
+        start_date = datetime(year, month, 1)
+
+# Store results
+fraud_stats = []
+
+for ym in month_range("202404", "202503"):
+    try:
+        df_fraud = pd.read_csv(f'fraud_data_{ym}.csv')
+        df_nonfraud = pd.read_csv(f'non_fraud_data_{ym}.csv')
+    except FileNotFoundError:
+        print(f"Missing files for {ym}, skipping...")
+        continue
+    
+    fraud_count = len(df_fraud)
+    nonfraud_sampled_count = len(df_nonfraud)
+    estimated_nonfraud_count = nonfraud_sampled_count * 100
+    
+    total_estimated = fraud_count + estimated_nonfraud_count
+    fraud_rate = fraud_count / total_estimated
+    
+    fraud_stats.append({
+        'month': ym,
+        'fraud_count': fraud_count,
+        'sampled_nonfraud_count': nonfraud_sampled_count,
+        'estimated_nonfraud_count': estimated_nonfraud_count,
+        'fraud_rate': round(fraud_rate * 100, 4)  # as percentage
+    })
+
+# Convert to DataFrame and print
+fraud_rate_df = pd.DataFrame(fraud_stats)
+print(fraud_rate_df.to_string(index=False))
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Assuming fraud_rate_df was created in the previous step
+# If not, re-run the computation block before this one
+
+# Ensure months are sorted and converted to datetime
+fraud_rate_df['month'] = pd.to_datetime(fraud_rate_df['month'], format='%Y%m')
+fraud_rate_df = fraud_rate_df.sort_values('month')
+
+# Plot the fraud rate trend
+plt.figure(figsize=(12, 6))
+plt.plot(fraud_rate_df['month'], fraud_rate_df['fraud_rate'], marker='o')
+plt.title('Monthly Fraud Rate Trend (Apr 2024 - Mar 2025)')
+plt.xlabel('Month')
+plt.ylabel('Fraud Rate')
+plt.grid(True)
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+
+
+
 from datetime import datetime, timedelta
 
 def month_range(start, end):
