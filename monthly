@@ -1,4 +1,43 @@
 import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.tsa.seasonal import seasonal_decompose
+
+# Prepare the data (assumes `fraud_rate_df` already exists)
+fraud_rate_df['month'] = pd.to_datetime(fraud_rate_df['month'], format='%Y%m')
+fraud_rate_df = fraud_rate_df.sort_values('month')
+fraud_rate_df.set_index('month', inplace=True)
+
+# Create time series
+ts = fraud_rate_df['fraud_rate']
+
+# Decompose the time series
+result = seasonal_decompose(ts, model='additive', period=12)
+
+# Plot decomposition
+plt.figure(figsize=(12, 10))
+
+plt.subplot(411)
+plt.plot(result.observed, label='Observed')
+plt.legend(loc='upper left')
+
+plt.subplot(412)
+plt.plot(result.trend, label='Trend', color='orange')
+plt.legend(loc='upper left')
+
+plt.subplot(413)
+plt.plot(result.seasonal, label='Seasonality', color='green')
+plt.legend(loc='upper left')
+
+plt.subplot(414)
+plt.plot(result.resid, label='Residual', color='red')
+plt.legend(loc='upper left')
+
+plt.tight_layout()
+plt.suptitle('Seasonal Decomposition of Fraud Rate Time Series', y=1.02)
+plt.show()
+
+
+import pandas as pd
 
 def month_range(start, end):
     from datetime import datetime
