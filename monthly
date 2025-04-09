@@ -1,4 +1,70 @@
 import pandas as pd
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+import os
+
+def month_range(start, end):
+    from datetime import datetime
+    start_date = datetime.strptime(start, "%Y%m")
+    end_date = datetime.strptime(end, "%Y%m")
+    while start_date <= end_date:
+        yield start_date.strftime("%Y%m")
+        month = start_date.month + 1
+        year = start_date.year + (month - 1) // 12
+        month = (month - 1) % 12 + 1
+        start_date = datetime(year, month, 1)
+
+# Step 1: Load all data into a single dataframe
+all_data = []
+
+for ym in month_range("202404", "202503"):
+    try:
+        df_fraud = pd.read_csv(f'fraud_data_{ym}.csv')
+        df_nonfraud = pd.read_csv(f'non_fraud_data_{ym}.csv')
+        df = pd.concat([df_fraud, df_nonfraud], ignore_index=True)
+        df['month'] = ym  # Tag each record with its month (optional feature)
+        all_data.append(df)
+    except FileNotFoundError:
+        print(f"Skipping missing files for {ym}")
+
+df_all = pd.concat(all_data, ignore_index=True)
+
+# Step 2: Preprocess
+df_all = df_all.dropna()
+
+# Drop ID columns or any other irrelevant ones
+drop_cols = ['usaa_party_pd_id']  # Add other irrelevant columns if needed
+X = df_all.drop(columns=drop_cols + ['fraud'])  
+y = df_all['fraud']
+
+# Optional: One-hot encode categorical variables
+X = pd.get_dummies(X)
+
+# Step 3: Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
+
+# Step 4: Train XGBoost model
+model = xgb.XGBClassifier(
+    objective='binary:logistic',
+    eval_metric='auc',
+    use_label_encoder=False,
+    n_estimators=100,
+    max_depth=4,
+    learning_rate=0.1
+)
+model.fit(X_train, y_train)
+
+# Step 5: Evaluate
+y_pred = model.predict(X_test)
+y_prob = model.predict_proba(X_test)[:, 1]
+
+print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+print("\nClassification Report:\n", classification_report(y_test, y_pred))
+print("\nROC AUC Score:", roc_auc_score(y_test, y_prob))
+
+
+import pandas as pd
 import matplotlib.pyplot as plt
 from statsmodels.tsa.seasonal import seasonal_decompose
 
