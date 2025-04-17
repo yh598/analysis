@@ -1,0 +1,26 @@
+from pyspark.sql import DataFrame
+
+# Initialize empty list to collect DataFrames
+df_list = []
+
+# Loop through yyyymm from 202404 to 202503
+for ym in range(202404, 202504):
+    try:
+        table_name = f"PBNKZ250.EZ250.DESTRO_DIGITAL_{ym}"
+        df_month = spark.table(table_name)
+        df_list.append(df_month)
+        print(f"Loaded table: {table_name}")
+    except Exception as e:
+        print(f"Skipping {ym}: {e}")
+        continue
+
+# Stack (union) all dataframes together
+if df_list:
+    from functools import reduce
+    from pyspark.sql import DataFrame
+
+    df_combined = reduce(DataFrame.unionByName, df_list)
+    df_combined.cache()
+    print(f"Combined DataFrame has {df_combined.count()} rows.")
+else:
+    print("No tables were successfully loaded.")
