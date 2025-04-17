@@ -1,3 +1,39 @@
+import types
+
+def make_closure_cell_template():
+    """Construct a safe cell object for closure emulation"""
+    def dummy_func():
+        pass
+    
+    # Create a code object using CodeType constructor
+    co = dummy_func.__code__
+    new_code = types.CodeType(
+        co.co_argcount,
+        co.co_posonlyargcount if hasattr(co, 'co_posonlyargcount') else 0,
+        co.co_kwonlyargcount,
+        co.co_nlocals,
+        co.co_stacksize,
+        co.co_flags,
+        co.co_code,
+        co.co_consts,
+        co.co_names,
+        co.co_varnames,
+        co.co_filename,
+        co.co_name,
+        co.co_firstlineno,
+        co.co_lnotab,
+        co.co_freevars,
+        co.co_cellvars
+    )
+    return new_code
+
+# Call it safely
+try:
+    cell_code = make_closure_cell_template()
+    print("Closure template created.")
+except TypeError as e:
+    print(f"TypeError encountered: {e}")
+
 from pyspark.sql import DataFrame
 
 # Initialize empty list to collect DataFrames
