@@ -1,3 +1,48 @@
+from snowflake.snowpark import Session
+from snowflake.ml.modeling.xgboost import XGBClassifier
+from snowflake.ml.modeling.model_selection import train_test_split
+from snowflake.ml.modeling.metrics import accuracy_score
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Assume Spark session has already queried Snowflake and created df
+# and it includes a target column "fraud"
+# df = Snowpark DataFrame
+
+# 1. Split into train/test
+train_df, test_df = df.randomSplit([0.8, 0.2], seed=42)
+
+# 2. Separate features and label
+X_train = train_df.drop("fraud")
+y_train = train_df.select("fraud")
+X_test = test_df.drop("fraud")
+y_test = test_df.select("fraud")
+
+# 3. Train XGBoost model
+model = XGBClassifier(max_depth=5, n_estimators=100)
+model.fit(X_train, y_train)
+
+# 4. Predict
+y_pred = model.predict(X_test)
+
+# 5. Evaluate
+acc = accuracy_score(y_test, y_pred)
+print("Accuracy:", acc)
+
+# 6. Get feature importances
+importances = model.get_feature_importances()
+importances_df = pd.DataFrame(importances.items(), columns=["feature", "importance"])
+top20 = importances_df.sort_values("importance", ascending=False).head(20)
+
+# 7. Plot
+plt.figure(figsize=(10, 6))
+plt.barh(top20["feature"], top20["importance"])
+plt.gca().invert_yaxis()
+plt.xlabel("Importance")
+plt.title("Top 20 Feature Importances - XGBoost")
+plt.tight_layout()
+plt.show()
+
 query = """
 SELECT * FROM PBNKZ250.EZ250.DESTRO_DIGITAL_202404
 UNION ALL
