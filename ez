@@ -1,3 +1,6 @@
+pip uninstall -y catboost numpy
+pip install numpy==1.21.6 catboost==1.2
+
 import types
 
 def make_closure_cell_template():
