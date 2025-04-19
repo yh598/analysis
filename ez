@@ -1,3 +1,8 @@
+index_cols = [col_name for col_name in df.columns if col_name.endswith("_INDEX")]
+
+for col_name in index_cols:
+    print(f"\nDistribution for: {col_name}")
+    df.select(col_name).group_by(col_name).count().sort(col_name).show()
 
 from snowflake.snowpark.functions import array_to_string, col
 
