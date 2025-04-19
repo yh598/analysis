@@ -1,3 +1,24 @@
+
+from snowflake.snowpark.functions import array_to_string, col
+
+# 1. Flatten array<string> to CSV string
+df = df.with_column("XCHNL_CHANNELS_STR", array_to_string(col("XCHNL_CHANNELS"), ','))
+
+# 2. Encode flattened string
+distinct_values = df.select("XCHNL_CHANNELS_STR").distinct().collect()
+category_map = {row[0]: idx for idx, row in enumerate(distinct_values)}
+
+df = df.with_column("XCHNL_CHANNELS_IDX", lit(None))
+
+for val, idx in category_map.items():
+    df = df.with_column(
+        "XCHNL_CHANNELS_IDX",
+        when(col("XCHNL_CHANNELS_STR") == val, lit(idx)).otherwise(col("XCHNL_CHANNELS_IDX"))
+    )
+
+# 3. Drop raw columns
+df = df.drop("XCHNL_CHANNELS").drop("XCHNL_CHANNELS_STR")
+
 from snowflake.snowpark.functions import col, when, lit, array_to_string
 from snowflake.ml.modeling.xgboost import XGBClassifier
 import pandas as pd
