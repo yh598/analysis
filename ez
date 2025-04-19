@@ -1,3 +1,57 @@
+
+# 1. Imports
+from snowflake.snowpark.functions import col
+from snowflake.ml.modeling.preprocessing import StringIndexer
+from snowflake.ml.modeling.xgboost import XGBClassifier
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+np.float = np.float64  # Fix NumPy 2.0+ deprecation
+
+# 2. Identify VARCHAR columns (categorical)
+categorical_cols = [col_name for col_name, dtype in df.dtypes if dtype == "VARCHAR"]
+print("Categorical columns:", categorical_cols)
+
+# 3. Encode categorical columns one-by-one
+for col_name in categorical_cols:
+    indexer = StringIndexer(input_cols=[col_name], output_cols=[f"{col_name}_index"])
+    df = indexer.fit(df).transform(df)
+    df = df.drop(col_name)
+
+# 4. Train/test split
+train_df, test_df = df.randomSplit([0.8, 0.2], seed=42)
+
+# 5. Train XGBoost model
+model = XGBClassifier(
+    max_depth=5,
+    n_estimators=100,
+    random_state=123
+)
+model.fit(train_df, "FRAUD")
+
+# 6. Predict
+pred_df = model.predict(test_df)
+
+# 7. Get top 20 features
+feat_imp = model.get_feature_importances()
+feat_df = pd.DataFrame(feat_imp.items(), columns=["feature", "importance"])
+top20 = feat_df.sort_values("importance", ascending=False).head(20)
+top_features = top20["feature"].tolist() + ["FRAUD"]
+
+# 8. Save top-20 feature DataFrame
+df_top20 = df.select([col(f) for f in top_features])
+df_top20.write.save_as_table("TOP20_FEATURE_DATA", mode="overwrite")
+
+# 9. Plot
+plt.figure(figsize=(10, 6))
+plt.barh(top20["feature"], top20["importance"])
+plt.gca().invert_yaxis()
+plt.xlabel("Importance")
+plt.title("Top 20 Feature Importances – XGBoost")
+plt.tight_layout()
+plt.show()
+
+
 # 1. Imports
 from snowflake.snowpark.functions import col
 from snowflake.ml.modeling.preprocessing import StringIndexer, Pipeline
