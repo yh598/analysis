@@ -1,3 +1,29 @@
+from snowflake.snowpark.functions import col, when, lit
+from snowflake.snowpark import functions as F
+
+categorical_cols = [col_name for col_name, dtype in df.dtypes if "string" in dtype.lower()]
+
+for col_name in categorical_cols:
+    # Get unique values
+    distinct_vals = df.select(col(col_name)).distinct().collect()
+    mapping = {row[0]: idx for idx, row in enumerate(distinct_vals)}
+
+    # Build CASE WHEN expression
+    expr = None
+    for val, idx in mapping.items():
+        case = when(col(col_name) == val, lit(idx))
+        expr = case if expr is None else expr.otherwise(case)
+
+    expr = expr.otherwise(lit(None))  # Default to null
+
+    # Apply encoded column in one go
+    new_col = f"{col_name}_index"
+    df = df.with_column(new_col, expr)
+
+    # Drop original
+    df = df.drop(col_name)
+
+
 # Identify columns starting with 'W'
 w_cols = [col_name for col_name in df.columns if col_name.startswith("W")]
 
