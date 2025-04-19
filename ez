@@ -1,3 +1,9 @@
+# Identify DATE-type columns
+date_cols = [col_name for col_name, dtype in df.dtypes if dtype.lower() == "date"]
+
+# Drop them
+df = df.drop(*date_cols)
+
 index_cols = [col_name for col_name in df.columns if col_name.endswith("_INDEX")]
 
 for col_name in index_cols:
