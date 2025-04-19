@@ -1,3 +1,61 @@
+from snowflake.snowpark.functions import col, when, lit
+from snowflake.ml.modeling.xgboost import XGBClassifier
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+np.float = np.float64  # for NumPy 2.0 compatibility
+
+# 1. Identify categorical columns
+categorical_cols = [col_name for col_name, dtype in df.dtypes if "string" in dtype.lower()]
+print("Categorical columns:", categorical_cols)
+
+# 2. Encode each categorical column manually
+for col_name in categorical_cols:
+    # Get distinct categories
+    distinct_values = df.select(col_name).distinct().collect()
+    category_map = {row[0]: idx for idx, row in enumerate(distinct_values)}
+
+    # Initialize column with null
+    df = df.with_column(f"{col_name}_index", lit(None))
+
+    # Apply mapping via when() chaining
+    for val, idx in category_map.items():
+        df = df.with_column(
+            f"{col_name}_index",
+            when(col(col_name) == val, lit(idx)).otherwise(col(f"{col_name}_index"))
+        )
+
+    # Drop original categorical column
+    df = df.drop(col_name)
+
+# 3. Split train/test
+train_df, test_df = df.randomSplit([0.8, 0.2], seed=42)
+
+# 4. Train XGBoost
+model = XGBClassifier(max_depth=5, n_estimators=100)
+model.fit(train_df, "FRAUD")
+
+# 5. Predict
+pred_df = model.predict(test_df)
+
+# 6. Feature Importance
+feat_imp = model.get_feature_importances()
+feat_df = pd.DataFrame(feat_imp.items(), columns=["feature", "importance"])
+top20 = feat_df.sort_values("importance", ascending=False).head(20)
+top_features = top20["feature"].tolist() + ["FRAUD"]
+
+# 7. Save top 20 features to a table
+df_top20 = df.select([col(f) for f in top_features])
+df_top20.write.save_as_table("TOP20_FEATURE_DATA", mode="overwrite")
+
+# 8. Plot
+plt.figure(figsize=(10, 6))
+plt.barh(top20["feature"], top20["importance"])
+plt.gca().invert_yaxis()
+plt.xlabel("Importance")
+plt.title("Top 20 Feature Importances – XGBoost (Manual Encoding)")
+plt.tight_layout()
+plt.show()
 
 # 1. Imports
 from snowflake.snowpark.functions import col
