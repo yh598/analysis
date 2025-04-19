@@ -1,3 +1,70 @@
+from snowflake.snowpark.functions import col, when, lit, array_to_string
+from snowflake.ml.modeling.xgboost import XGBClassifier
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+np.float = np.float64  # patch for NumPy 2.0+
+
+# 1. Flatten array<string> columns to delimited string columns
+array_cols = [col_name for col_name, dtype in df.dtypes if "array<string>" in dtype.lower()]
+for col_name in array_cols:
+    df = df.with_column(f"{col_name}_str", array_to_string(col(col_name), ','))  # join array to CSV string
+    df = df.drop(col_name)  # drop original array column
+
+# 2. Identify categorical string columns (excluding array)
+categorical_cols = [
+    col_name for col_name, dtype in df.dtypes
+    if "string" in dtype.lower() and "array" not in dtype.lower()
+]
+print("Categorical columns:", categorical_cols)
+
+# 3. Encode categorical columns manually
+for col_name in categorical_cols:
+    distinct_values = df.select(col_name).distinct().collect()
+    category_map = {row[0]: idx for idx, row in enumerate(distinct_values)}
+
+    # Initialize encoded column
+    df = df.with_column(f"{col_name}_index", lit(None))
+
+    for val, idx in category_map.items():
+        df = df.with_column(
+            f"{col_name}_index",
+            when(col(col_name) == val, lit(idx)).otherwise(col(f"{col_name}_index"))
+        )
+
+    df = df.drop(col_name)
+
+# 4. Split into train/test
+train_df, test_df = df.randomSplit([0.8, 0.2], seed=42)
+
+# 5. Train XGBoost model
+model = XGBClassifier(max_depth=5, n_estimators=100, random_state=42)
+model.fit(train_df, "FRAUD")
+
+# 6. Predict
+pred_df = model.predict(test_df)
+
+# 7. Extract top 20 features
+feat_imp = model.get_feature_importances()
+feat_df = pd.DataFrame(feat_imp.items(), columns=["feature", "importance"])
+top20 = feat_df.sort_values("importance", ascending=False).head(20)
+top_features = top20["feature"].tolist() + ["FRAUD"]
+
+# 8. Save DataFrame with top features
+df_top20 = df.select([col(f) for f in top_features])
+df_top20.write.save_as_table("TOP20_FEATURE_DATA", mode="overwrite")
+
+# 9. Plot
+plt.figure(figsize=(10, 6))
+plt.barh(top20["feature"], top20["importance"])
+plt.gca().invert_yaxis()
+plt.xlabel("Importance")
+plt.title("Top 20 Feature Importances – XGBoost (Snowpark)")
+plt.tight_layout()
+plt.show()
+
+
+
 from snowflake.snowpark.functions import col, when, lit
 from snowflake.ml.modeling.xgboost import XGBClassifier
 import pandas as pd
