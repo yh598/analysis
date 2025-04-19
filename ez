@@ -1,3 +1,52 @@
+# 1. Imports
+from snowflake.snowpark.functions import col
+from snowflake.ml.modeling.catboost import CatBoostClassifier
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+np.float = np.float64  # Patch for NumPy 2.0 compatibility
+
+# 2. Split your full dataframe
+train_df, test_df = df.randomSplit([0.8, 0.2], seed=42)
+
+# 3. Define and train CatBoost model
+cb_model = CatBoostClassifier(
+    iterations=100,
+    learning_rate=0.1,
+    depth=6,
+    random_state=123,
+    label_col="FRAUD",
+    output_cols="PREDICTION"
+)
+cb_model.fit(train_df)
+
+# 4. Predict (optional)
+pred_df = cb_model.predict(test_df)
+
+# 5. Extract top 20 features by importance
+feat_imp = cb_model.get_feature_importances()
+feat_df = pd.DataFrame(feat_imp.items(), columns=["feature", "importance"])
+top20_features = feat_df.sort_values("importance", ascending=False).head(20)["feature"].tolist()
+
+# 6. Include target column
+top20_features.append("FRAUD")
+
+# 7. Filter and save top 20 DataFrame
+df_top20 = df.select([col(f) for f in top20_features])
+df_top20.write.save_as_table("TOP20_FEATURE_DATA", mode="overwrite")
+
+# 8. Plot
+plt.figure(figsize=(10, 6))
+plt.barh(feat_df.sort_values("importance", ascending=False).head(20)["feature"],
+         feat_df.sort_values("importance", ascending=False).head(20)["importance"])
+plt.gca().invert_yaxis()
+plt.xlabel("Importance")
+plt.title("Top 20 Feature Importances - CatBoost (Snowpark)")
+plt.tight_layout()
+plt.show()
+
+
+
 # 1. Patch NumPy for Snowpark compatibility
 import numpy as np
 np.float = np.float64
