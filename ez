@@ -1,3 +1,49 @@
+from catboost import CatBoostClassifier, Pool
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+
+# 1. Prepare data
+X = df_pd.drop("FRAUD", axis=1)
+y = df_pd["FRAUD"]
+
+# Optional: identify categorical feature names (CatBoost handles them natively)
+cat_features = [col for col in X.columns if X[col].dtype == 'object' or 'index' in col.lower()]
+
+# 2. Train/test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 3. Define and train the model
+model = CatBoostClassifier(
+    iterations=200,
+    learning_rate=0.1,
+    depth=6,
+    cat_features=cat_features,
+    verbose=0
+)
+model.fit(X_train, y_train)
+
+# 4. Predict and evaluate
+y_pred = model.predict(X_test)
+acc = accuracy_score(y_test, y_pred)
+print(f"Accuracy: {acc:.4f}")
+
+import matplotlib.pyplot as plt
+
+feat_importances = model.get_feature_importance()
+feat_names = model.feature_names_
+
+top_n = 20
+top_idx = sorted(range(len(feat_importances)), key=lambda i: -feat_importances[i])[:top_n]
+
+plt.figure(figsize=(10, 6))
+plt.barh([feat_names[i] for i in reversed(top_idx)],
+         [feat_importances[i] for i in reversed(top_idx)])
+plt.xlabel("Importance")
+plt.title("Top 20 Feature Importances - CatBoost")
+plt.tight_layout()
+plt.show()
+
+
 from snowflake.snowpark.functions import col, when, lit
 from snowflake.snowpark import functions as F
 
