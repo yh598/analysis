@@ -1,3 +1,31 @@
+from snowflake.snowpark.functions import when, col, avg
+from snowflake.snowpark.types import FloatType
+
+# Step 1: Replace placeholder values (like 999999999) with NULLs
+for c in test_df.columns:
+    test_df = test_df.with_column(
+        c,
+        when(col(c) == 999999999, None).otherwise(col(c))
+    )
+
+# Step 2: Identify numeric columns only (bigint, int, float)
+numeric_cols = [name for name, dtype in test_df.dtypes if dtype in ("bigint", "int", "float")]
+
+# Step 3: Cast numeric columns to float (in-place)
+for c in numeric_cols:
+    test_df = test_df.with_column(c, col(c).cast("float"))
+
+# Step 4: Fill NULLs in numeric columns with column-wise average
+for c in numeric_cols:
+    avg_val = test_df.agg(avg(col(c)).alias("mean")).collect()[0]["mean"]
+    test_df = test_df.fillna({c: avg_val})
+
+# Step 5: Run prediction using cleaned test_df
+df_scored_sdf = xgbmodel.predict(test_df)
+
+# Optional: show output
+df_scored_sdf.show()
+
 from sklearn.metrics import average_precision_score, precision_recall_curve, auc
 import matplotlib.pyplot as plt
 
