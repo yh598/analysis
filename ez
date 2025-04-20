@@ -1,3 +1,27 @@
+from sklearn.metrics import average_precision_score, precision_recall_curve, auc
+import matplotlib.pyplot as plt
+
+# Step 1: Get predictions
+y_proba_df = xgbmodel.predict(test_df, output_cols=["PREDICTION_PROBABILITY"])
+y_proba = y_proba_df.to_pandas()["PREDICTION_PROBABILITY"]
+y_true = test_df.select("FRAUD").to_pandas()["FRAUD"]
+
+# Step 2: Compute PR AUC
+ap_score = average_precision_score(y_true, y_proba)
+precision, recall, _ = precision_recall_curve(y_true, y_proba)
+pr_auc = auc(recall, precision)
+
+# Step 3: Plot
+plt.figure()
+plt.plot(recall, precision, label=f"PR AUC = {pr_auc:.2f}")
+plt.xlabel("Recall")
+plt.ylabel("Precision")
+plt.title("Precision-Recall Curve")
+plt.legend()
+plt.grid()
+plt.show()
+
+
 from snowflake.ml.modeling.metrics import accuracy_score, precision_score, recall_score, confusion_matrix
 
 # Compute metrics directly on Snowpark DataFrame
