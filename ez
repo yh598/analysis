@@ -1,3 +1,19 @@
+from snowflake.ml.modeling.metrics import accuracy_score, precision_score, recall_score, confusion_matrix
+
+# Compute metrics directly on Snowpark DataFrame
+acc = accuracy_score(df_scored_sdf, y_true_col_name="FRAUD", y_pred_col_name="PREDICTION")
+prec = precision_score(df_scored_sdf, y_true_col_name="FRAUD", y_pred_col_name="PREDICTION")
+rec = recall_score(df_scored_sdf, y_true_col_name="FRAUD", y_pred_col_name="PREDICTION")
+cm = confusion_matrix(df_scored_sdf, y_true_col_name="FRAUD", y_pred_col_name="PREDICTION")
+
+# Print results
+print("Accuracy:", acc)
+print("Precision:", prec)
+print("Recall:", rec)
+print("Confusion Matrix:")
+print(cm)
+
+
 b_df = spark.table("BMBK2250.E2526.DIG_MEMBER_FEATURES").dropDuplicates(["USAAPARTYPRIMARYDIGITID"])
 c_df = spark.table("BMBK2250.E2526.DIG_MEMBER_CROSSFN_FEATURES").dropDuplicates(["USAAPARTYPRIMARYDIGITID"])
 d_df = spark.table("BMBK2250.E2526.CROSS_CHANNEL_MEMBER_FEATURES").dropDuplicates(["USAAPARTYPRIMARYDIGITID"])
