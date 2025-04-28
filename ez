@@ -1,3 +1,7 @@
+
+print("Train rows:", train_df.count())
+print("Test rows:", test_df.count())
+
 # 1. Count number of rows per ID
 id_counts = df.group_by('USAAPARTYPRIMARYDIGITID').count().to_pandas()
 
