@@ -1,3 +1,112 @@
+# --------------------------------
+# 1. Define the split function
+# --------------------------------
+
+def split_by_id_balanced_smart(df, id_col, target_fraction=0.8, random_state=42):
+    """
+    Split a Snowpark DataFrame into train/test by ID, balancing IDs and approximating row counts.
+    """
+    # 1. Count number of rows per ID
+    id_counts = df.group_by(id_col).count().to_pandas()
+    id_counts.rename(columns={"COUNT": "count"}, inplace=True)
+
+    # 2. Shuffle IDs
+    id_counts = id_counts.sample(frac=1, random_state=random_state).reset_index(drop=True)
+
+    # 3. Allocate IDs for train
+    total_rows = df.count()
+    target_train_rows = target_fraction * total_rows
+
+    train_ids = []
+    train_row_sum = 0
+
+    for idx, row in id_counts.iterrows():
+        train_ids.append(row[id_col])
+        train_row_sum += row['count']
+        if train_row_sum >= target_train_rows:
+            break
+
+    # 4. Remaining IDs → test
+    all_ids = set(id_counts[id_col])
+    test_ids = list(all_ids - set(train_ids))
+
+    # 5. Split df
+    train_df = df.filter(df[id_col].isin(train_ids))
+    test_df = df.filter(df[id_col].isin(test_ids))
+
+    return train_df, test_df
+
+# --------------------------------
+# 2. Split your full dataset
+# --------------------------------
+
+train_df, test_df = split_by_id_balanced_smart(
+    df,
+    id_col="USAAPARTYPRIMARYDIGITID",
+    target_fraction=0.8
+)
+
+print("Train rows:", train_df.count())
+print("Test rows:", test_df.count())
+
+# --------------------------------
+# 3. Prepare features and target
+# --------------------------------
+
+feature_cols = [c for c in train_df.columns if c not in ("FRAUD", "USAAPARTYPRIMARYDIGITID")]
+target_col = "FRAUD"
+
+# --------------------------------
+# 4. Train the Snowpark XGBClassifier
+# --------------------------------
+
+from snowflake.ml.modeling.xgboost import XGBClassifier
+
+xgbmodel = XGBClassifier(
+    input_cols=feature_cols,
+    label_cols=target_col,
+    output_cols="PREDICTION",
+    random_state=123,
+    database_name="BANK_EAGLE_PROD",   # Specify your database if needed
+    schema_name="AMCHQ.HM"              # Specify your schema if needed
+)
+
+xgbmodel.fit(train_df)
+
+# --------------------------------
+# 5. Extract feature importance
+# --------------------------------
+
+# Convert to local XGBoost model
+xgbmodel_local = xgbmodel.to_xgboost()
+
+import pandas as pd
+
+feat_importance = pd.DataFrame(
+    xgbmodel_local.feature_importances_,
+    index=xgbmodel_local.feature_names_in_,
+    columns=["FeatureImportance"]
+)
+
+feat_importance = feat_importance.sort_values("FeatureImportance", ascending=False).reset_index()
+feat_importance.rename(columns={"index": "Feature"}, inplace=True)
+
+print(feat_importance.head(20))
+
+# --------------------------------
+# 6. (Optional) Plot feature importance
+# --------------------------------
+
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(10,6))
+plt.barh(feat_importance['Feature'][:20], feat_importance['FeatureImportance'][:20])
+plt.gca().invert_yaxis()
+plt.title("Top 20 Feature Importances")
+plt.xlabel("Importance Score")
+plt.show()
+
+
 
 print("Train rows:", train_df.count())
 print("Test rows:", test_df.count())
