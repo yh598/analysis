@@ -2,6 +2,68 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import NumericType
 
 # -----------------------
+# 1. Drop non-numeric columns (safe)
+# -----------------------
+def drop_non_numeric_columns(df):
+    """
+    Drop all columns that are not numeric.
+    Keep only Integer, Long, Double, Decimal, Float.
+    """
+    numeric_cols = [f.name for f in df.schema.fields if isinstance(f.dataType, NumericType)]
+    return df.select(*numeric_cols)
+
+# -----------------------
+# 2. Find mostly zero features (safe)
+# -----------------------
+def find_mostly_zero_features(df, zero_threshold=0.95):
+    """
+    Find features that have more than zero_threshold % of zeros.
+    """
+    total_rows = df.count()
+
+    zero_ratio_exprs = [
+        (F.sum(F.when(F.col(c) == 0, 1).otherwise(0)) / total_rows).alias(c)
+        for c in df.columns
+    ]
+
+    # Aggregate all columns together
+    zero_ratios_row = df.agg(*zero_ratio_exprs).collect()[0].asDict()
+
+    # Convert to DataFrame
+    zero_info = [(k, v) for k, v in zero_ratios_row.items()]
+    zero_info_df = spark.createDataFrame(zero_info, ["feature", "zero_ratio"])
+
+    # Find mostly zero features
+    mostly_zero_features = zero_info_df.filter(F.col("zero_ratio") >= zero_threshold)
+
+    return mostly_zero_features
+
+# -----------------------
+# 3. Full execution pipeline
+# -----------------------
+
+# Load your table
+# df = spark.table("PBNKEZ250.EZ250.DIGITAL_DATA_1_PCT_2025_01_01_2025_03_31")
+
+# Step 1: Keep only numeric columns
+df_numeric = drop_non_numeric_columns(df)
+
+# Step 2: Find mostly zero features
+zero_threshold = 0.95  # Can change to 0.90 if needed
+mostly_zero_features = find_mostly_zero_features(df_numeric, zero_threshold)
+
+# Step 3: Output
+num_mostly_zero_features = mostly_zero_features.count()
+
+print(f"Number of features mostly turning to zeros (>{zero_threshold*100:.0f}%): {num_mostly_zero_features}")
+display(mostly_zero_features.orderBy("zero_ratio", ascending=False))
+
+
+
+from pyspark.sql import functions as F
+from pyspark.sql.types import NumericType
+
+# -----------------------
 # 1. Drop non-numeric columns
 # -----------------------
 def drop_non_numeric_columns(df):
