@@ -1,3 +1,16 @@
+# First: get unique USAAPARTYPRIMARYDIGITID
+unique_ids = df.select('USAAPARTYPRIMARYDIGITID').distinct().toPandas()
+
+# Randomly split IDs
+from sklearn.model_selection import train_test_split
+train_ids, test_ids = train_test_split(unique_ids['USAAPARTYPRIMARYDIGITID'], test_size=0.2, random_state=42)
+
+# Filter train and test sets based on the split IDs
+train_df = df.filter(df['USAAPARTYPRIMARYDIGITID'].isin(train_ids.tolist()))
+test_df = df.filter(df['USAAPARTYPRIMARYDIGITID'].isin(test_ids.tolist()))
+
+
+
 import pickle
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_auc_score, average_precision_score, precision_recall_curve
