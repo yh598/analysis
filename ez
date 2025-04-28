@@ -1,3 +1,38 @@
+from pyspark.sql import functions as F
+
+# Set a threshold: 95% zeros considered "consistently zero"
+zero_threshold = 0.95
+
+# 1. Exclude non-feature columns if necessary
+exclude_cols = ['partition_dt', 'usa_party_pd_id', 'label', 'fraud']  # Adjust based on your dataset
+feature_cols = [c for c in df.columns if c not in exclude_cols]
+
+# 2. Calculate zero ratio per feature
+zero_info = []
+
+total_rows = df.count()
+
+for col in feature_cols:
+    zero_rows = df.filter(F.col(col) == 0).count()
+    zero_ratio = zero_rows / total_rows
+    zero_info.append((col, zero_ratio))
+
+# 3. Create a summary DataFrame
+zero_info_df = spark.createDataFrame(zero_info, ["feature", "zero_ratio"])
+
+# 4. Filter features mostly zeros
+mostly_zero_features = zero_info_df.filter(F.col("zero_ratio") >= zero_threshold)
+
+# 5. Count how many features
+num_mostly_zero_features = mostly_zero_features.count()
+
+# Display
+print(f"Number of features mostly turning to zeros: {num_mostly_zero_features}")
+display(mostly_zero_features.orderBy("zero_ratio", ascending=False))
+
+
+
+
 def split_by_id_flexible(df, id_col, target_fraction=0.8, mode="id", random_state=42):
     """
     Split a Snowpark DataFrame into train/test by ID, either by ID count or approximated row counts.
