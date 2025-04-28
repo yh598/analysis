@@ -1,5 +1,19 @@
 SELECT 
     LISTAGG(
+        'SUM(CASE WHEN "' || COLUMN_NAME || '" = 0 THEN 1 ELSE 0 END) / COUNT(*) AS "' || COLUMN_NAME || '_zero_ratio"', 
+        ',\n'
+    ) WITHIN GROUP (ORDER BY COLUMN_NAME) AS generated_sql
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE 
+    TABLE_SCHEMA = 'EZ250'
+    AND TABLE_NAME = 'DESTRO_DIGITAL_202503'
+    AND DATA_TYPE LIKE 'NUMBER%'
+;
+
+
+
+SELECT 
+    LISTAGG(
         'SUM(CASE WHEN ' || COLUMN_NAME || ' = 0 THEN 1 ELSE 0 END) / COUNT(*) AS ' || COLUMN_NAME || '_zero_ratio', 
         ', '
     ) 
