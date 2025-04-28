@@ -1,4 +1,72 @@
 from pyspark.sql import functions as F
+from pyspark.sql.types import NumericType, DoubleType
+
+# -------------------
+# 1. Drop non-numeric columns
+# -------------------
+def drop_non_numeric_columns(df):
+    numeric_cols = [f.name for f in df.schema.fields if isinstance(f.dataType, NumericType)]
+    return df.select(*numeric_cols)
+
+# -------------------
+# 2. Test column-by-column for safe cast
+# -------------------
+def find_safe_columns(df):
+    safe_cols = []
+    for col in df.columns:
+        try:
+            # Try simple aggregation, if fails, column is bad
+            df.select(F.col(col).cast("double")).agg(F.sum(F.col(col))).collect()
+            safe_cols.append(col)
+        except Exception as e:
+            print(f"Column {col} unsafe, dropped. Error: {e}")
+    return safe_cols
+
+# -------------------
+# 3. Find mostly-zero features
+# -------------------
+def find_mostly_zero_features_safe(df, zero_threshold=0.95):
+    total_rows = df.count()
+    zero_ratio_exprs = [
+        (F.sum(F.when(F.col(c) == 0, 1).otherwise(0)) / total_rows).alias(c)
+        for c in df.columns
+    ]
+    zero_ratios_row = df.agg(*zero_ratio_exprs).collect()[0].asDict()
+    zero_info = [(k, v) for k, v in zero_ratios_row.items()]
+    zero_info_df = spark.createDataFrame(zero_info, ["feature", "zero_ratio"])
+    mostly_zero_features = zero_info_df.filter(F.col("zero_ratio") >= zero_threshold)
+    return mostly_zero_features
+
+# -------------------
+# 4. Full pipeline
+# -------------------
+
+# Load your dataset
+# df = spark.table("PBNKEZ250.EZ250.DIGITAL_DATA_1_PCT_2025_01_01_2025_03_31")
+
+# Step 1: Drop obvious non-numeric
+df_numeric = drop_non_numeric_columns(df)
+
+# Step 2: Find columns that are safely readable
+safe_cols = find_safe_columns(df_numeric)
+print(f"Safe columns detected: {len(safe_cols)}")
+
+# Step 3: Select only safe columns
+df_safe = df_numeric.select(*safe_cols)
+
+# Step 4: Find mostly-zero features
+zero_threshold = 0.95
+mostly_zero_features = find_mostly_zero_features_safe(df_safe, zero_threshold)
+
+# Step 5: Output
+num_mostly_zero_features = mostly_zero_features.count()
+print(f"Number of features mostly turning to zeros (>{zero_threshold*100:.0f}%): {num_mostly_zero_features}")
+display(mostly_zero_features.orderBy("zero_ratio", ascending=False))
+
+
+
+
+from pyspark.sql import functions as F
 from pyspark.sql.types import NumericType
 
 # -----------------------
