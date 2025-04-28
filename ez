@@ -1,3 +1,32 @@
+
+from snowflake.snowpark import functions as F
+
+def split_df_by_id(df, id_col: str, train_frac: float = 0.8):
+    """
+    Split the Snowpark DataFrame into train and test sets by a given ID column.
+    Ensures approximately `train_frac` fraction of the rows in the train set.
+    """
+    # Assign a random number (0 to 1) for each unique ID
+    distinct_ids = df.select(id_col).distinct().with_column(
+        "rand_val", F.uniform(F.lit(0).cast("float"), F.lit(1).cast("float"), F.random())
+    )
+    # Split IDs into train and test based on the random value and target fraction
+    train_ids = distinct_ids.filter(F.col("rand_val") <= train_frac)
+    test_ids = distinct_ids.filter(F.col("rand_val") > train_frac)
+    # Join back to the original DataFrame to get train and test splits
+    train_df = df.join(train_ids, id_col, "inner")
+    test_df = df.join(test_ids, id_col, "inner")
+    # Calculate counts to report the actual distribution
+    total_count = df.count()
+    train_count = train_df.count()
+    test_count = test_df.count()
+    # Print the final train and test percentages
+    train_pct = train_count * 100.0 / total_count if total_count > 0 else 0
+    test_pct = test_count * 100.0 / total_count if total_count > 0 else 0
+    print(f"Train: {train_pct:.2f}% , Test: {test_pct:.2f}%")
+    return train_df, test_df
+
+
 from snowflake.snowpark import functions as F
 import snowflake.snowpark.window as W
 
