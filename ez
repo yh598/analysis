@@ -1,3 +1,76 @@
+from snowflake.snowpark import functions as F
+
+def split_by_id_snowpark_fast(df, id_col, target_fraction=0.8, random_state=42):
+    """
+    Faster Snowpark version: split train/test by ID, balance by row counts without to_pandas().
+    
+    Args:
+        df: Snowpark DataFrame
+        id_col: ID column name (string)
+        target_fraction: Fraction of rows for training set
+        random_state: Random seed
+
+    Returns:
+        train_df, test_df
+    """
+
+    # Step 1: Group by ID and count rows
+    id_counts_df = df.group_by(id_col).agg(F.count('*').alias('row_count'))
+
+    # Step 2: Add a random column for shuffling
+    id_counts_df = id_counts_df.with_column('rand_val', F.random(seed=random_state))
+
+    # Step 3: Order randomly and add cumulative sum
+    id_counts_df = id_counts_df.sort('rand_val')
+
+    window_spec = F.window().order_by('rand_val').rows_between(F.unbounded_preceding(), F.current_row())
+    id_counts_df = id_counts_df.with_column('cum_sum', F.sum('row_count').over(window_spec))
+
+    # Step 4: Find total rows
+    total_rows = id_counts_df.agg(F.sum('row_count')).collect()[0][0]
+    target_train_rows = total_rows * target_fraction
+
+    # Step 5: Create train/test splits
+    train_ids_df = id_counts_df.filter(F.col('cum_sum') <= target_train_rows).select(id_col)
+    test_ids_df = id_counts_df.filter(F.col('cum_sum') > target_train_rows).select(id_col)
+
+    # Step 6: Join back to original dataframe
+    train_df = df.join(train_ids_df, on=id_col, how='inner')
+    test_df = df.join(test_ids_df, on=id_col, how='inner')
+
+    return train_df, test_df
+
+# -------------------------------------------------------------------
+# Usage example:
+
+# 1. Split
+train_df, test_df = split_by_id_snowpark_fast(df, id_col='USAAPARTYPRIMARYDIGITID', target_fraction=0.8)
+
+# 2. Check overlaps
+train_ids_df = train_df.select('USAAPARTYPRIMARYDIGITID').distinct()
+test_ids_df = test_df.select('USAAPARTYPRIMARYDIGITID').distinct()
+
+overlap = train_ids_df.join(test_ids_df, on='USAAPARTYPRIMARYDIGITID')
+overlap_count = overlap.count()
+print(f"Overlapping IDs: {overlap_count}")  # Should be 0
+
+# 3. Check row counts
+total_rows_original = df.count()
+train_rows = train_df.count()
+test_rows = test_df.count()
+
+print(f"Original total rows: {total_rows_original}")
+print(f"Train + Test total rows: {train_rows + test_rows}")
+
+# 4. Print % split
+train_percent = train_rows / total_rows_original * 100
+test_percent = test_rows / total_rows_original * 100
+
+print(f"Train %: {train_percent:.2f}%")
+print(f"Test %: {test_percent:.2f}%")
+
+
+
 SELECT 
     LISTAGG(
         'SUM(CASE WHEN "' || COLUMN_NAME || '" = 0 THEN 1 ELSE 0 END) / COUNT(*) AS "' || COLUMN_NAME || '_zero_ratio"', 
