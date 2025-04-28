@@ -1,6 +1,35 @@
 # 1. Count number of rows per ID
 id_counts = df.group_by('USAAPARTYPRIMARYDIGITID').count().to_pandas()
 
+# Fix column name to lowercase
+id_counts.rename(columns={"COUNT": "count"}, inplace=True)
+
+# 2. Randomly shuffle IDs
+id_counts = id_counts.sample(frac=1, random_state=42).reset_index(drop=True)
+
+# 3. Allocate IDs to train based on target row count
+target_train_rows = 0.8 * df.count()
+
+train_ids = []
+train_row_sum = 0
+
+for idx, row in id_counts.iterrows():
+    train_ids.append(row['USAAPARTYPRIMARYDIGITID'])
+    train_row_sum += row['count']
+    if train_row_sum >= target_train_rows:
+        break
+
+# Remaining IDs for test
+all_ids = set(id_counts['USAAPARTYPRIMARYDIGITID'])
+test_ids = list(all_ids - set(train_ids))
+
+# 4. Split the dataframe
+train_df = df.filter(df['USAAPARTYPRIMARYDIGITID'].isin(train_ids))
+test_df = df.filter(df['USAAPARTYPRIMARYDIGITID'].isin(test_ids))
+
+# 1. Count number of rows per ID
+id_counts = df.group_by('USAAPARTYPRIMARYDIGITID').count().to_pandas()
+
 # 2. Randomly shuffle IDs
 id_counts = id_counts.sample(frac=1, random_state=42).reset_index(drop=True)
 
