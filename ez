@@ -1,6 +1,68 @@
 from pyspark.sql import functions as F
 from pyspark.sql.types import NumericType
 
+# -----------------------
+# 1. Drop non-numeric columns
+# -----------------------
+def drop_non_numeric_columns(df):
+    numeric_cols = [f.name for f in df.schema.fields if isinstance(f.dataType, NumericType)]
+    return df.select(*numeric_cols)
+
+# -----------------------
+# 2. Find mostly zero features (VECTORIZED)
+# -----------------------
+def find_mostly_zero_features_vectorized(df, zero_threshold=0.95):
+    """
+    Vectorized version: Find features mostly zero without crashing.
+    """
+    total_rows = df.count()
+    
+    # Build expressions: sum(when(col==0,1).otherwise(0)) / total_rows
+    zero_ratio_exprs = [
+        (F.sum(F.when(F.col(c) == 0, 1).otherwise(0)) / total_rows).alias(c)
+        for c in df.columns
+    ]
+    
+    # Apply all expressions at once
+    zero_ratios_row = df.agg(*zero_ratio_exprs).collect()[0].asDict()
+    
+    # Convert result to list of (feature, zero_ratio)
+    zero_info = [(k, v) for k, v in zero_ratios_row.items()]
+    
+    # Turn into DataFrame
+    zero_info_df = spark.createDataFrame(zero_info, ["feature", "zero_ratio"])
+    
+    # Filter features mostly zeros
+    mostly_zero_features = zero_info_df.filter(F.col("zero_ratio") >= zero_threshold)
+    
+    return mostly_zero_features
+
+# -----------------------
+# 3. Main Execution
+# -----------------------
+
+# Your input DataFrame
+# df = (your loaded dataset)
+
+# Step 1: Clean DataFrame
+df_numeric = drop_non_numeric_columns(df)
+
+# Step 2: Find mostly-zero features (SAFE)
+zero_threshold = 0.95
+mostly_zero_features = find_mostly_zero_features_vectorized(df_numeric, zero_threshold)
+
+# Step 3: Show results
+num_mostly_zero_features = mostly_zero_features.count()
+
+print(f"Number of features mostly turning to zeros (>{zero_threshold*100:.0f}%): {num_mostly_zero_features}")
+display(mostly_zero_features.orderBy("zero_ratio", ascending=False))
+
+
+
+
+from pyspark.sql import functions as F
+from pyspark.sql.types import NumericType
+
 # ----------------------
 # 1. Helper: Drop all non-numeric columns
 # ----------------------
