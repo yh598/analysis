@@ -1,4 +1,51 @@
 from snowflake.snowpark import functions as F
+from snowflake.snowpark.window import Window
+
+def split_by_id_snowpark_fast(df, id_col, target_fraction=0.8, random_state=42):
+    """
+    Fast Snowpark function to split DataFrame into train/test by ID,
+    balancing approximately by row counts.
+    """
+
+    id_counts_df = (
+        df.group_by(id_col)
+          .agg(F.count('*').alias('row_count'))
+          .with_column('rand_val', F.random(seed=random_state))
+          .sort('rand_val')
+    )
+
+    window_spec = Window.order_by('rand_val').rows_between(Window.unbounded_preceding(), Window.current_row())
+    id_counts_df = id_counts_df.with_column('cum_sum', F.sum('row_count').over(window_spec))
+
+    total_rows = id_counts_df.agg(F.sum('row_count')).collect()[0][0]
+    target_train_rows = total_rows * target_fraction
+
+    train_ids_df = id_counts_df.filter(F.col('cum_sum') <= target_train_rows).select(id_col)
+    test_ids_df = id_counts_df.filter(F.col('cum_sum') > target_train_rows).select(id_col)
+
+    train_df = df.join(train_ids_df, on=id_col, how='inner')
+    test_df = df.join(test_ids_df, on=id_col, how='inner')
+
+    return train_df, test_df
+
+train_df, test_df = split_by_id_snowpark_fast(df, id_col='USAAPARTYPRIMARYDIGITID', target_fraction=0.8)
+
+# Optional: validate no overlap
+overlap_count = train_df.select(id_col).intersect(test_df.select(id_col)).count()
+print(f"Overlapping IDs: {overlap_count}")
+
+# Optional: validate row counts
+print(f"Train rows: {train_df.count()}")
+print(f"Test rows: {test_df.count()}")
+
+train_df.write.save_as_table('TRAIN_TEMP')
+test_df.write.save_as_table('TEST_TEMP')
+
+
+
+
+
+from snowflake.snowpark import functions as F
 
 def split_by_id_snowpark_fast(df, id_col, target_fraction=0.8, random_state=42):
     """
