@@ -1,4 +1,64 @@
 from pyspark.sql import functions as F
+from pyspark.sql.types import NumericType
+
+# ----------------------
+# 1. Helper: Drop all non-numeric columns
+# ----------------------
+def drop_non_numeric_columns(df):
+    """
+    Drop all non-numeric columns from a Spark DataFrame.
+    Only keep Integer, Long, Float, Double, Decimal types.
+    """
+    numeric_cols = [f.name for f in df.schema.fields if isinstance(f.dataType, NumericType)]
+    return df.select(*numeric_cols)
+
+# ----------------------
+# 2. Helper: Calculate features mostly turning into zeros
+# ----------------------
+def find_mostly_zero_features(df, zero_threshold=0.95):
+    """
+    Find features where the percentage of zeros is greater than or equal to zero_threshold.
+    """
+    feature_cols = df.columns  # Already only numeric after cleaning
+
+    zero_info = []
+    total_rows = df.count()
+
+    for col in feature_cols:
+        zero_rows = df.filter(F.col(col) == 0).count()
+        zero_ratio = zero_rows / total_rows
+        zero_info.append((col, zero_ratio))
+
+    # Create a summary DataFrame
+    zero_info_df = spark.createDataFrame(zero_info, ["feature", "zero_ratio"])
+
+    # Filter features mostly zeros
+    mostly_zero_features = zero_info_df.filter(F.col("zero_ratio") >= zero_threshold)
+
+    return mostly_zero_features
+
+# ----------------------
+# 3. Main Execution
+# ----------------------
+
+# Assume your original dataframe is called 'df'
+
+# Step 1: Drop non-numeric columns
+df_numeric = drop_non_numeric_columns(df)
+
+# Step 2: Find features consistently turning into zeros
+zero_threshold = 0.95  # or adjust based on your needs
+mostly_zero_features = find_mostly_zero_features(df_numeric, zero_threshold)
+
+# Step 3: Count how many features and show details
+num_mostly_zero_features = mostly_zero_features.count()
+
+print(f"Number of features mostly turning to zeros (>{zero_threshold*100:.0f}%): {num_mostly_zero_features}")
+display(mostly_zero_features.orderBy("zero_ratio", ascending=False))
+
+
+
+from pyspark.sql import functions as F
 
 # Set a threshold: 95% zeros considered "consistently zero"
 zero_threshold = 0.95
