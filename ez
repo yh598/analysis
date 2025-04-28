@@ -1,3 +1,61 @@
+def split_by_id_flexible(df, id_col, target_fraction=0.8, mode="id", random_state=42):
+    """
+    Split a Snowpark DataFrame into train/test by ID, either by ID count or approximated row counts.
+
+    Args:
+        df: Snowpark DataFrame
+        id_col: str, ID column to split on
+        target_fraction: float, fraction of train set
+        mode: str, "id" to split by ID count evenly, "row" to split trying to balance row counts
+        random_state: int, random seed for reproducibility
+
+    Returns:
+        train_df, test_df: Snowpark DataFrames
+    """
+
+    if mode not in ["id", "row"]:
+        raise ValueError("mode must be 'id' or 'row'")
+
+    if mode == "id":
+        # --- Simple Split by IDs (safe) ---
+        id_df = df.select(id_col).distinct().to_pandas()
+        id_df = id_df.sample(frac=1, random_state=random_state).reset_index(drop=True)
+
+        n_total = len(id_df)
+        n_train = int(target_fraction * n_total)
+
+        train_ids = id_df.iloc[:n_train][id_col].tolist()
+        test_ids = id_df.iloc[n_train:][id_col].tolist()
+
+    else:
+        # --- Smart Split by Row Counts (approximate) ---
+        id_counts = df.group_by(id_col).count().to_pandas()
+        id_counts.rename(columns={"COUNT": "count"}, inplace=True)
+        id_counts = id_counts.sample(frac=1, random_state=random_state).reset_index(drop=True)
+
+        total_rows = df.count()
+        target_train_rows = target_fraction * total_rows
+
+        train_ids = []
+        train_row_sum = 0
+
+        for idx, row in id_counts.iterrows():
+            train_ids.append(row[id_col])
+            train_row_sum += row['count']
+            if train_row_sum >= target_train_rows:
+                break
+
+        all_ids = set(id_counts[id_col])
+        test_ids = list(all_ids - set(train_ids))
+
+    # Now filter original dataframe
+    train_df = df.filter(df[id_col].isin(train_ids))
+    test_df = df.filter(df[id_col].isin(test_ids))
+
+    return train_df, test_df
+
+
+
 # --------------------------------
 # 1. Define the split function
 # --------------------------------
