@@ -1,3 +1,60 @@
+from snowflake.snowpark.functions import col, avg, stddev_samp, abs as sf_abs, lit, sum as sf_sum, count, when
+from snowflake.snowpark.window import Window
+
+top_features = [
+    'DIG_ACT_SVC_CNTVISIT', 'DIG_PLFM_APPS_PCTPAGE', 'DIG_BU_PNC_PCTDURATION',
+    'DIG_BU_PNC_PCTPAGE', 'DIG_ACT_ENT_CNTPAGE', 'DIG_ACT_SVC_PCTVISIT',
+    'DIG_BU_PNC_PCTVISIT', 'DIG_BU_PNC_DURATION', 'DIG_ACT_MMV_PCTVISIT',
+    'DIG_PLFM_APPS_PCTVISIT', 'DIG_ACTYP_ENT_PCTVISIT', 'DIG_PLFM_WEB_CNTVISIT',
+    'DIG_BU_ASC_PCTPAGE', 'DIG_ACTYP_MMV_PCTPAGE', 'DIG_ACT_ACQ_PCTVISIT',
+    'DIG_ACTYP_ACQ_CNTPAGE', 'DIG_EVENT_MMVSTART_CNTVISIT', 'DIG_PRDCT_CRC_DURATION',
+    'DIG_EVENT_MMVSUCCESS_PCTVISIT', 'DIG_ACTYP_INQ_PCTVISIT'
+]
+
+df = session.table("YOUR_INPUT_TABLE")
+df = df.with_column("RECORD_DT", col("RECORD_DT").cast("date"))
+
+for feature in top_features:
+    # Get stats
+    stats = df.agg(
+        avg(feature).alias("mean_val"),
+        stddev_samp(feature).alias("std_val")
+    ).collect()[0]
+
+    mean_val, std_val = stats[0], stats[1]
+
+    # Z-score + anomaly
+    df = df.with_column(
+        f"{feature}_zscore",
+        (col(feature) - lit(mean_val)) / lit(std_val)
+    ).with_column(
+        f"{feature}_anomaly",
+        (sf_abs(col(f"{feature}_zscore")) > 3).cast("int")
+    )
+
+    # Rolling average
+    w = Window.partition_by().order_by("RECORD_DT").rows_between(-6, 0)
+    df = df.with_column(f"{feature}_rolling_avg", avg(feature).over(w))
+
+# Aggregate by date
+agg_expr = [count("*").alias("record_count")]
+
+for feature in top_features:
+    agg_expr.extend([
+        sf_sum(when(col(feature).is_null(), 1).otherwise(0)).alias(f"{feature}_null_count"),
+        sf_sum(when(col(feature) == 0, 1).otherwise(0)).alias(f"{feature}_zero_count"),
+        avg(feature).alias(f"{feature}_avg"),
+        avg(f"{feature}_rolling_avg").alias(f"{feature}_rolling_avg"),
+        sf_sum(f"{feature}_anomaly").alias(f"{feature}_anomaly_count")
+    ])
+
+summary = df.group_by("RECORD_DT").agg(*agg_expr).order_by("RECORD_DT")
+
+# Optional: export to pandas
+pandas_df = summary.to_pandas()
+
+
+
 import matplotlib.pyplot as plt
 
 plt.figure(figsize=(12, 6))
