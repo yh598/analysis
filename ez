@@ -1,3 +1,57 @@
+from snowflake.snowpark import Session
+from snowflake.snowpark.functions import col, avg, stddev_samp, abs as sf_abs, lit, sum as sf_sum, count
+from snowflake.snowpark.window import Window
+
+# Step 1: Create session
+session = Session.builder.configs({
+    "account": "<your_account>",
+    "user": "<your_user>",
+    "password": "<your_password>",
+    "role": "<your_role>",
+    "warehouse": "<your_warehouse>",
+    "database": "<your_database>",
+    "schema": "<your_schema>"
+}).create()
+
+# Step 2: Load table
+df = session.table("YOUR_INPUT_TABLE")  # e.g. digital_metrics_daily
+df = df.with_column("RECORD_DT", col("RECORD_DT").cast("date"))
+
+# Step 3: Calculate mean and std for page_count
+stats = df.agg(
+    avg("PAGE_COUNT").alias("mean_page_count"),
+    stddev_samp("PAGE_COUNT").alias("std_page_count")
+).collect()[0]
+
+mean_val = stats[0]
+std_val = stats[1]
+
+# Step 4: Add Z-score and anomaly flag
+df = df.with_column(
+    "page_count_zscore",
+    (col("PAGE_COUNT") - lit(mean_val)) / lit(std_val)
+).with_column(
+    "page_count_anomaly",
+    (sf_abs(col("page_count_zscore")) > lit(3)).cast("int")
+)
+
+# Step 5: Add 7-day rolling average using window
+w = Window.partition_by().order_by("RECORD_DT").rows_between(-6, 0)
+df = df.with_column("page_count_rolling_avg", avg("PAGE_COUNT").over(w))
+
+# Step 6: Aggregate anomalies by date
+summary = df.group_by("RECORD_DT").agg(
+    count("*").alias("record_count"),
+    sf_sum("page_count_anomaly").alias("anomaly_count"),
+    avg("PAGE_COUNT").alias("daily_avg"),
+    avg("page_count_rolling_avg").alias("rolling_avg")
+).order_by("RECORD_DT")
+
+# Step 7: Optional – Convert to Pandas for plotting
+pandas_df = summary.to_pandas()
+
+
+
 agg_result = spark_df.select(
     F.mean(feature),
     F.stddev(feature)
