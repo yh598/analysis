@@ -1,3 +1,30 @@
+import matplotlib.pyplot as plt
+
+top_features = [
+    'DIG_ACT_SVC_CNTVISIT', 'DIG_PLFM_APPS_PCTPAGE', 'DIG_BU_PNC_PCTDURATION',
+    'DIG_BU_PNC_PCTPAGE', 'DIG_ACT_ENT_CNTPAGE'
+]
+
+plt.figure(figsize=(14, 6))
+for feature in top_features:
+    plt.plot(
+        pdf["RECORD_MONTH"], 
+        pdf[f"{feature}_zero_ratio"], 
+        label=feature
+    )
+
+plt.title("Monthly Zero Ratio Trend")
+plt.xlabel("Month")
+plt.ylabel("Zero Ratio (%)")
+plt.xticks(rotation=45)
+plt.grid(True)
+plt.legend(loc="upper right", bbox_to_anchor=(1.15, 1.0))
+plt.tight_layout()
+plt.show()
+
+
+
+
 drop_cols = [f"{f}_null_count" for f in top_features] + [f"{f}_zero_count" for f in top_features]
 monthly_summary = monthly_summary.drop(*drop_cols)
 
