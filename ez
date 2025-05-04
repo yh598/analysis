@@ -1,3 +1,13 @@
+for f in top_features:
+    new_columns = {
+        f"{f}_null_ratio": col(f"{f}_null_count") / col("record_count"),
+        f"{f}_zero_ratio": col(f"{f}_zero_count") / col("record_count"),
+        f"{f}_anomaly_ratio": col(f"{f}_anomaly_count") / col("record_count")
+    }
+    summary = summary.with_columns(new_columns)
+
+
+
 from snowflake.snowpark import Session
 from snowflake.snowpark.functions import (
     col, avg, stddev_samp, abs as sf_abs, lit,
