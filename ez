@@ -1,4 +1,14 @@
 for f in top_features:
+    summary = summary.with_column(
+        f"{f}_null_ratio", col(f"{f}_null_count") / col("record_count")
+    ).with_column(
+        f"{f}_zero_ratio", col(f"{f}_zero_count") / col("record_count")
+    ).with_column(
+        f"{f}_anomaly_ratio", col(f"{f}_anomaly_count") / col("record_count")
+    )
+
+
+for f in top_features:
     new_columns = {
         f"{f}_null_ratio": col(f"{f}_null_count") / col("record_count"),
         f"{f}_zero_ratio": col(f"{f}_zero_count") / col("record_count"),
