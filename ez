@@ -1,3 +1,38 @@
+import pandas as pd
+
+# Load your dictionary (CSV or Excel)
+dict_df = pd.read_csv("data_dictionary.csv")  # or use pd.read_excel()
+
+# Normalize column names
+dict_df.columns = dict_df.columns.str.strip().str.lower()
+
+# Normalize dictionary col_name to match lowercase features
+dict_df["col_name"] = dict_df["col_name"].str.strip().str.lower()
+
+# Uppercase feature names from model
+top_features = [
+    "DIG_ACT_SVC_CNVTSIT", "DIG_PLFM_APPS_PCTPAGE", "DIG_BU_PNC_PCTDURATION",
+    "DIG_BU_PNC_PCTPAGE", "DIG_ACT_ENT_CNPAGE", "DIG_ACT_SVC_PCTVISIT",
+    "DIG_BU_PNC_PCTVISIT", "DIG_BU_PNC_DURATION", "DIG_ACTY_MMV_PCTVISIT",
+    "DIG_PLFM_APPS_PCTVISIT", "DIG_ACTYP_EN_PCTVISIT", "DIG_PLFM_WEB_CNVTSIT",
+    "DIG_BU_ASC_PCTPAGE", "DIG_ACTYP_MMV_PCTPAGE", "DIG_ACT_ACQ_PCTVISIT",
+    "DIG_ACTYP_ACQ_CNPAGE", "DIG_EVENT_MMVSTART_CNVTSIT", "DIG_PRDCT_CCR_DURATION",
+    "DIG_EVENT_MMVSUCCESS_PCTVISIT", "DIG_ACTYP_INQ_PCTVISIT"
+]
+
+# Convert top features to lowercase for match
+top_features_lower = [f.lower() for f in top_features]
+
+# Match descriptions
+matched = dict_df[dict_df["col_name"].isin(top_features_lower)]
+
+# Map back to original case
+matched["original_feature"] = matched["col_name"].str.upper()
+
+# Final result
+feature_descriptions = matched[["original_feature", "description"]].set_index("original_feature").to_dict()["description"]
+
+
 # Re-import required libraries after kernel reset
 import pandas as pd
 import numpy as np
