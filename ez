@@ -1,3 +1,54 @@
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Histogram & Boxplot for a single feature
+feature = "f1"
+
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+sns.histplot(df[feature], bins=30, kde=True)
+plt.title(f"Histogram of {feature}")
+
+plt.subplot(1, 2, 2)
+sns.boxplot(x=df[feature])
+plt.title(f"Boxplot of {feature}")
+
+plt.tight_layout()
+plt.show()
+
+# Summary statistics
+print(df[feature].describe())
+
+# Boxplot: Feature vs. FRAUD
+sns.boxplot(x="FRAUD", y="f1", data=df)
+plt.title("Feature f1 by FRAUD Status")
+plt.show()
+
+# KDE plot
+sns.kdeplot(data=df, x="f1", hue="FRAUD", common_norm=False)
+plt.title("f1 Distribution by FRAUD")
+plt.show()
+
+# Correlation
+print(df[["f1", "FRAUD"]].corr())
+
+# Pair plot of top features
+top_features = ["f1", "f2", "f3", "FRAUD"]
+sns.pairplot(df[top_features], hue="FRAUD")
+plt.suptitle("Pair Plot of Top Features Colored by FRAUD", y=1.02)
+plt.show()
+
+# Correlation matrix heatmap
+plt.figure(figsize=(8, 6))
+sns.heatmap(df[top_features].corr(), annot=True, cmap="coolwarm", center=0)
+plt.title("Correlation Heatmap Among Features")
+plt.tight_layout()
+plt.show()
+
+
+
+
 import matplotlib.pyplot as plt
 
 top_features = [
