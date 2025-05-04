@@ -1,3 +1,39 @@
+from snowflake.snowpark.functions import col, trunc_date, sum as sf_sum, count, when
+
+# Truncate to month
+df = df.with_column("RECORD_MONTH", trunc_date("MONTH", col("RECORD_DT")))
+
+# List of features
+top_features = [
+    'DIG_ACT_SVC_CNTVISIT', 'DIG_PLFM_APPS_PCTPAGE', 'DIG_BU_PNC_PCTDURATION',
+    'DIG_BU_PNC_PCTPAGE', 'DIG_ACT_ENT_CNTPAGE'
+    # Add remaining if needed
+]
+
+# Build aggregation expressions
+agg_expr = [count("*").alias("record_count")]
+
+for f in top_features:
+    agg_expr.extend([
+        sf_sum(when(col(f).is_null(), 1).otherwise(0)).alias(f"{f}_null_count"),
+        sf_sum(when(col(f) == 0, 1).otherwise(0)).alias(f"{f}_zero_count")
+    ])
+
+# Group by RECORD_MONTH
+monthly_summary = df.group_by("RECORD_MONTH").agg(*agg_expr)
+
+# Add ratio columns
+for f in top_features:
+    monthly_summary = monthly_summary.with_column(
+        f"{f}_null_ratio", col(f"{f}_null_count") / col("record_count")
+    ).with_column(
+        f"{f}_zero_ratio", col(f"{f}_zero_count") / col("record_count")
+    )
+
+# Optional: save to a table
+monthly_summary.write.mode("overwrite").save_as_table("DIGITAL_FEATURE_MONTHLY_RATIOS")
+
+
 for f in top_features:
     summary = summary.with_column(
         f"{f}_null_ratio", col(f"{f}_null_count") / col("record_count")
