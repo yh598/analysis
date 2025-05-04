@@ -1,3 +1,7 @@
+drop_cols = [f"{f}_null_count" for f in top_features] + [f"{f}_zero_count" for f in top_features]
+monthly_summary = monthly_summary.drop(*drop_cols)
+
+
 from snowflake.snowpark.functions import col, trunc_date, sum as sf_sum, count, when
 
 # Truncate to month
