@@ -1,3 +1,66 @@
+# Re-import required libraries after kernel reset
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.signal import find_peaks
+
+# Simulated zero ratio trend data
+months = pd.date_range(start="2024-01-01", periods=12, freq="M")
+top_features = ["f1", "f2", "f3"]
+data = []
+
+np.random.seed(42)
+for feature in top_features:
+    values = np.abs(np.random.normal(loc=0.1, scale=0.05, size=len(months)))
+    values[5] += 0.3  # Inject a spike
+    for i, month in enumerate(months):
+        data.append((month, feature, values[i]))
+
+pdf = pd.DataFrame(data, columns=["RECORD_MONTH", "feature", "ZERO_RATIO"])
+
+# Plot with turning points
+plt.figure(figsize=(14, 6))
+
+for feature in top_features:
+    subset = pdf[pdf["feature"] == feature]
+    plt.plot(subset["RECORD_MONTH"], subset["ZERO_RATIO"], label=feature)
+
+    # Detect spikes
+    peaks, _ = find_peaks(subset["ZERO_RATIO"], height=0.2)
+    for peak in peaks:
+        plt.axvline(x=subset["RECORD_MONTH"].iloc[peak], color="red", linestyle="--", alpha=0.3)
+
+plt.title("Monthly Zero Ratio Trend with Turning Points")
+plt.xlabel("Month")
+plt.ylabel("Zero Ratio (%)")
+plt.xticks(rotation=45)
+plt.legend(loc="upper right", bbox_to_anchor=(1.15, 1))
+plt.tight_layout()
+plt.grid(True)
+plt.show()
+
+import ruptures as rpt
+
+# Assume `pdf` is your trend DataFrame, already grouped by RECORD_MONTH and feature
+for feature in top_features:
+    series = pdf[pdf['feature'] == feature]["ZERO_RATIO"].values
+
+    model = rpt.Pelt(model="rbf").fit(series)
+    breakpoints = model.predict(pen=5)
+
+    print(f"Change points for {feature}: {breakpoints}")
+
+from scipy.signal import find_peaks
+
+for feature in top_features:
+    series = pdf[pdf['feature'] == feature]["ZERO_RATIO"].values
+    peaks, _ = find_peaks(series, height=0.05)  # tune height threshold
+
+    if len(peaks) > 0:
+        print(f"{feature}: spikes at {pdf['RECORD_MONTH'].iloc[peaks].values}")
+
+
+
 import seaborn as sns
 import matplotlib.pyplot as plt
 
