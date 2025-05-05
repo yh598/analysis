@@ -1,3 +1,49 @@
+from scipy.signal import find_peaks
+import matplotlib.pyplot as plt
+
+# You can expand this list for more features
+top_features = ["DIG_ACT_SVC_CNVTSIT"]
+
+plt.figure(figsize=(14, 6))
+
+for feature in top_features:
+    # Plot ZERO_RATIO
+    plt.plot(
+        pdf["RECORD_MONTH"], 
+        pdf[feature + "_ZERO_RATIO"], 
+        label=f"{feature} - Zero", 
+        linestyle="--"
+    )
+    
+    # Plot ANOMALY_RATIO
+    plt.plot(
+        pdf["RECORD_MONTH"], 
+        pdf[feature + "_ANOMALY_RATIO"], 
+        label=f"{feature} - Anomaly", 
+        linestyle="-."
+    )
+
+    # Detect turning points (spikes) for ZERO_RATIO
+    zero_peaks, _ = find_peaks(pdf[feature + "_ZERO_RATIO"], height=0.2)
+    for peak in zero_peaks:
+        plt.axvline(x=pdf["RECORD_MONTH"].iloc[peak], color="red", linestyle="--", alpha=0.3)
+
+    # Detect turning points (spikes) for ANOMALY_RATIO
+    anomaly_peaks, _ = find_peaks(pdf[feature + "_ANOMALY_RATIO"], height=0.05)
+    for peak in anomaly_peaks:
+        plt.axvline(x=pdf["RECORD_MONTH"].iloc[peak], color="blue", linestyle=":", alpha=0.3)
+
+plt.title("Monthly Zero & Anomaly Ratio Trend with Turning Points")
+plt.xlabel("Month")
+plt.ylabel("Ratio")
+plt.xticks(rotation=45)
+plt.legend(loc="upper right", bbox_to_anchor=(1.15, 1))
+plt.tight_layout()
+plt.grid(True)
+plt.show()
+
+
+
 import pandas as pd
 
 # Load your dictionary (CSV or Excel)
