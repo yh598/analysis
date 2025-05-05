@@ -1,3 +1,20 @@
+import matplotlib.dates as mdates
+
+# Ensure RECORD_MONTH is datetime
+pdf["RECORD_MONTH"] = pd.to_datetime(pdf["RECORD_MONTH"])
+
+# Set major ticks by year, minor ticks by month
+ax1.xaxis.set_major_locator(mdates.YearLocator())
+ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+ax1.xaxis.set_minor_locator(mdates.MonthLocator())
+ax1.xaxis.set_minor_formatter(mdates.DateFormatter("%b"))
+ax1.tick_params(axis="x", which="major", rotation=0, labelsize=10)
+ax1.tick_params(axis="x", which="minor", rotation=90, labelsize=8)
+
+ax1.set_xlim(pd.Timestamp("2020-01-01"), pd.Timestamp("2025-12-31"))
+
+
+
 from scipy.signal import find_peaks
 import matplotlib.pyplot as plt
 
