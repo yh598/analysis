@@ -8,6 +8,57 @@ from scipy.signal import find_peaks
 # Prevent OpenBLAS thread errors
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
+# Reusable function
+def plot_feature_ratios(pdf: pd.DataFrame, feature: str):
+    pdf["RECORD_MONTH"] = pd.to_datetime(pdf["RECORD_MONTH"])
+
+    fig, ax1 = plt.subplots(figsize=(14, 6))
+    ax2 = ax1.twinx()
+
+    # Plot zero and anomaly ratios
+    line1, = ax1.plot(pdf["RECORD_MONTH"], pdf[f"{feature}_ZERO_RATIO"], label="Zero Ratio", color="tab:blue", linestyle="--")
+    line2, = ax2.plot(pdf["RECORD_MONTH"], pdf[f"{feature}_ANOMALY_RATIO"], label="Anomaly Ratio", color="tab:red", linestyle="-.")
+
+    # Spike detection
+    zero_peaks, _ = find_peaks(pdf[f"{feature}_ZERO_RATIO"], height=0.2)
+    for peak in zero_peaks:
+        ax1.axvline(x=pdf["RECORD_MONTH"].iloc[peak], color="blue", linestyle="--", alpha=0.3)
+
+    anomaly_peaks, _ = find_peaks(pdf[f"{feature}_ANOMALY_RATIO"], height=0.05)
+    for peak in anomaly_peaks:
+        ax2.axvline(x=pdf["RECORD_MONTH"].iloc[peak], color="red", linestyle=":", alpha=0.3)
+
+    # Axis labels
+    ax1.set_ylabel("Zero Ratio", color="tab:blue")
+    ax2.set_ylabel("Anomaly Ratio", color="tab:red")
+    ax1.set_xlabel("Month")
+
+    # X-axis: yyyy-mm every 3 months
+    ax1.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+    ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+    ax1.tick_params(axis="x", rotation=45, labelsize=9)
+
+    # Lock full time range
+    ax1.set_xlim(pd.Timestamp("2020-01-01"), pd.Timestamp("2025-12-31"))
+
+    # Final layout
+    fig.legend(handles=[line1, line2], loc="upper right", bbox_to_anchor=(1.15, 1))
+    plt.title(f"{feature} — Monthly Zero & Anomaly Ratio Trend with Spikes (2020–2025)")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from scipy.signal import find_peaks
+
+# Prevent OpenBLAS thread errors
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+
 # Function to plot one feature
 def plot_feature_ratios(pdf: pd.DataFrame, feature: str):
     pdf["RECORD_MONTH"] = pd.to_datetime(pdf["RECORD_MONTH"])
