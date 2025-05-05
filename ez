@@ -1,3 +1,15 @@
+# Load data dictionary
+dict_df = pd.read_csv("data_dictionary.csv")
+dict_df.columns = dict_df.columns.str.lower()
+dict_df["col_name"] = dict_df["col_name"].str.strip().str.lower()
+
+# Create mapping
+descriptions = dict(zip(dict_df["col_name"].str.upper(), dict_df["description"]))
+
+# Plot with description
+plot_feature_ratios(pdf, "DIG_ACT_SVC_CNVTSIT", descriptions=descriptions)
+
+
 def plot_feature_ratios(pdf: pd.DataFrame, feature: str, descriptions: dict = None):
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
