@@ -1,6 +1,75 @@
 from scipy.signal import find_peaks
 import matplotlib.pyplot as plt
 
+top_features = ["DIG_ACT_SVC_CNVTSIT"]  # extend as needed
+
+for feature in top_features:
+    fig, ax1 = plt.subplots(figsize=(14, 6))
+    ax2 = ax1.twinx()
+
+    # Plot ZERO_RATIO on left y-axis
+    line1, = ax1.plot(
+        pdf["RECORD_MONTH"], 
+        pdf[feature + "_ZERO_RATIO"], 
+        label="Zero Ratio", 
+        color="tab:blue", 
+        linestyle="--"
+    )
+
+    # Detect spikes in ZERO_RATIO
+    zero_peaks, _ = find_peaks(pdf[feature + "_ZERO_RATIO"], height=0.2)
+    for peak in zero_peaks:
+        ax1.axvline(pdf["RECORD_MONTH"].iloc[peak], color="blue", linestyle="--", alpha=0.3)
+
+    ax1.set_ylabel("Zero Ratio", color="tab:blue")
+    ax1.tick_params(axis='y', labelcolor="tab:blue")
+
+    # Plot ANOMALY_RATIO on right y-axis
+    line2, = ax2.plot(
+        pdf["RECORD_MONTH"], 
+        pdf[feature + "_ANOMALY_RATIO"], 
+        label="Anomaly Ratio", 
+        color="tab:red", 
+        linestyle="-."
+    )
+
+    # Detect spikes in ANOMALY_RATIO
+    anomaly_peaks, _ = find_peaks(pdf[feature + "_ANOMALY_RATIO"], height=0.05)
+    for peak in anomaly_peaks:
+        ax2.axvline(pdf["RECORD_MONTH"].iloc[peak], color="red", linestyle=":", alpha=0.3)
+
+    ax2.set_ylabel("Anomaly Ratio", color="tab:red")
+    ax2.tick_params(axis='y', labelcolor="tab:red")
+
+    # Layout & legend
+    plt.title(f"{feature} - Monthly Zero & Anomaly Ratio Trend with Turning Points")
+    fig.legend(handles=[line1, line2], loc="upper right", bbox_to_anchor=(1.15, 1))
+    ax1.set_xlabel("Month")
+    ax1.set_xticklabels(pdf["RECORD_MONTH"].dt.strftime("%Y-%m"), rotation=45)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+from scipy.signal import find_peaks
+
+spike_summary = []
+
+for feature in zero_df["feature"].unique():
+    series = zero_df[zero_df["feature"] == feature]["ZERO_RATIO"].values
+    peaks, _ = find_peaks(series, height=0.2)
+    spike_months = zero_df[zero_df["feature"] == feature].iloc[peaks]["RECORD_MONTH"].tolist()
+    for month in spike_months:
+        spike_summary.append((feature, month.strftime("%Y-%m")))
+
+# Print results
+for feature, month in spike_summary:
+    print(f"Feature: {feature} | Spike Month: {month}")
+
+
+from scipy.signal import find_peaks
+import matplotlib.pyplot as plt
+
 # You can expand this list for more features
 top_features = ["DIG_ACT_SVC_CNVTSIT"]
 
