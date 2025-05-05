@@ -1,3 +1,62 @@
+import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from scipy.signal import find_peaks
+
+# Prevent OpenBLAS thread errors
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+
+# Function to plot one feature
+def plot_feature_ratios(pdf: pd.DataFrame, feature: str):
+    pdf["RECORD_MONTH"] = pd.to_datetime(pdf["RECORD_MONTH"])
+
+    fig, ax1 = plt.subplots(figsize=(14, 6))
+    ax2 = ax1.twinx()
+
+    # Plot ratios
+    line1, = ax1.plot(pdf["RECORD_MONTH"], pdf[f"{feature}_ZERO_RATIO"], label="Zero Ratio", color="tab:blue", linestyle="--")
+    line2, = ax2.plot(pdf["RECORD_MONTH"], pdf[f"{feature}_ANOMALY_RATIO"], label="Anomaly Ratio", color="tab:red", linestyle="-.")
+
+    # Spikes
+    zero_peaks, _ = find_peaks(pdf[f"{feature}_ZERO_RATIO"], height=0.2)
+    for peak in zero_peaks:
+        ax1.axvline(pdf["RECORD_MONTH"].iloc[peak], color="blue", linestyle="--", alpha=0.3)
+
+    anomaly_peaks, _ = find_peaks(pdf[f"{feature}_ANOMALY_RATIO"], height=0.05)
+    for peak in anomaly_peaks:
+        ax2.axvline(pdf["RECORD_MONTH"].iloc[peak], color="red", linestyle=":", alpha=0.3)
+
+    # Axis settings
+    ax1.set_ylabel("Zero Ratio", color="tab:blue")
+    ax2.set_ylabel("Anomaly Ratio", color="tab:red")
+    ax1.set_xlabel("Month")
+
+    ax1.xaxis.set_major_locator(mdates.YearLocator())
+    ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    ax1.xaxis.set_minor_locator(mdates.MonthLocator())
+    ax1.xaxis.set_minor_formatter(mdates.DateFormatter("%b"))
+    ax1.tick_params(axis="x", which="major", rotation=0, labelsize=10)
+    ax1.tick_params(axis="x", which="minor", rotation=90, labelsize=8)
+    ax1.set_xlim(pd.Timestamp("2020-01-01"), pd.Timestamp("2025-12-31"))
+
+    # Final layout
+    fig.legend(handles=[line1, line2], loc="upper right", bbox_to_anchor=(1.15, 1))
+    plt.title(f"{feature} — Monthly Zero & Anomaly Ratio Trend with Spikes (2020–2025)")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+# Example feature list
+top_features = ["DIG_ACT_SVC_CNVTSIT", "DIG_PLFM_APPS_PCTPAGE"]
+
+# Call plot for each
+for feat in top_features:
+    plot_feature_ratios(pdf, feat)
+
+
+
 import matplotlib.dates as mdates
 
 # Ensure RECORD_MONTH is datetime
