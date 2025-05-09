@@ -1,5 +1,52 @@
 import pandas as pd
 
+# Sample zero ratio data
+zero_summary = pd.DataFrame({
+    'feature': [
+        'VIEW_MV_SCR2TGT_DEST01_V1.ATM_NO_VERIFY_72HR',
+        'VIEW_MV_SCR2TGT_DEST01_V1.INTERNET_CRC_ACQ_72HR',
+        'VIEW_MV_SCR2TGT_DEST01_V1.INTERNET_CRC_MEM1_48HR',
+        'VIEW_MV_SCR2TGT_DEST01_V1.INTERNET_CRC_MEMT_12HR',
+        'VIEW_MV_SCR2TGT_DEST01_V1.INTERNET_CUS_ADDRM_72HR',
+        'VIEW_MV_SCR2TGT_DEST01_V1.INTERNET_CUS_ADDRP_72HR',
+        'VIEW_MV_SCR2TGT_DEST01_V1.INTERNET_CUS_EM_12HR',
+        'VIEW_MV_SCR2TGT_DEST01_V1.INTERNET_CUS_IDOC_12HR',
+        'VIEW_MV_SCR2TGT_DEST01_V1.INTERNET_CUS_PH_24HR',
+        'VIEW_MV_SCR2TGT_DEST01_V1.MOBILE_CRC_MEMI_72HR',
+        'VIEW_MV_SCR2TGT_DEST01_V1.MOBILE_CRC_PIN_12HR',
+        'VIEW_MV_SCR2TGT_DEST01_V1.TELEPHONE_ZIP_FAIL_72HR'
+    ],
+    'zero_ratio': [1.0] * 12
+})
+
+# Remove the prefix
+zero_summary['feature'] = zero_summary['feature'].str.replace('VIEW_MV_SCR2TGT_DEST01_V1.', '', regex=False)
+
+# Sample source data from Excel table
+source_df = pd.DataFrame({
+    'feature': [
+        'ATM_NO_VERIFY_72HR', 'INTERNET_CRC_ACQ_72HR', 'INTERNET_CRC_MEMT_12HR',
+        'INTERNET_CUS_ADDRM_72HR', 'INTERNET_CUS_ADDRP_72HR', 'INTERNET_CUS_EM_12HR',
+        'INTERNET_CUS_IDOC_12HR', 'INTERNET_CUS_PH_24HR', 'MOBILE_CRC_MEMI_72HR',
+        'MOBILE_CRC_PIN_12HR', 'TELEPHONE_ZIP_FAIL_72HR'
+    ],
+    'data_source': [
+        'AUTH LOG', 'MAAC', 'MAAC', 'MAAC', 'MAAC', 'MAAC',
+        'MAAC', 'MAAC', 'MAAC', 'MAAC', 'OTHER'
+    ]
+})
+
+# Merge the source info into the zero_summary table
+final_df = zero_summary.merge(source_df, on='feature', how='left')
+
+# If desired, sort or filter
+final_df = final_df.sort_values('feature')
+
+# Display result
+import ace_tools as tools; tools.display_dataframe_to_user(name="Feature Summary Table", dataframe=final_df)
+
+import pandas as pd
+
 mostly_zero_features = mostly_zero_features.reset_index()
 mostly_zero_features.columns = ['feature', 'zero_ratio']
 
