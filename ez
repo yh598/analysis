@@ -1,3 +1,26 @@
+import pandas as pd
+
+mostly_zero_features = mostly_zero_features.reset_index()
+mostly_zero_features.columns = ['feature', 'zero_ratio']
+
+mostly_zero_features['feature_cleaned'] = mostly_zero_features['feature'].str.replace(
+    r'^VIEW_MV_SCR2TGT_DESTI01_V1\.', '', regex=True
+)
+
+df_source_map = pd.read_excel('/path/to/FAM_v2_check_data_sources.xlsx', usecols=['Var', 'Data Source'])
+df_source_map.columns = ['feature_cleaned', 'data_source']
+
+summary_with_source = mostly_zero_features.merge(df_source_map, on='feature_cleaned', how='left')
+
+summary_with_source = summary_with_source.drop(columns=['feature_cleaned'])
+
+print(summary_with_source.sort_values('zero_ratio', ascending=False))
+
+# Optional: save to file
+# summary_with_source.to_excel('zero_features_with_sources.xlsx', index=False)
+
+
+
 # Load data dictionary
 dict_df = pd.read_csv("data_dictionary.csv")
 dict_df.columns = dict_df.columns.str.lower()
