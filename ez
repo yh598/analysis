@@ -4,6 +4,43 @@ SELECT
     PHONE_NR,
     (PHONE_AREA_CD || '-' || PHONE_NR) AS FULLPHONENUM,
     CNTC_PT_VER_GMT_TS,
+    
+    -- Flag first appearance
+    CASE 
+        WHEN ROW_NUMBER() OVER (
+            PARTITION BY PRTY_ID, PHONE_AREA_CD, PHONE_NR
+            ORDER BY CNTC_PT_VER_GMT_TS ASC
+        ) = 1 THEN 1
+        ELSE 0
+    END AS PHONE_CHANGE_FLAG,
+
+    -- Track the first timestamp this number appeared
+    MIN(CNTC_PT_VER_GMT_TS) OVER (
+        PARTITION BY PRTY_ID, PHONE_AREA_CD, PHONE_NR
+    ) AS PHONE_CHANGE_DATE
+
+FROM (
+    SELECT DISTINCT
+        PRTY_ID,
+        PHONE_AREA_CD,
+        PHONE_NR,
+        CNTC_PT_VER_GMT_TS
+    FROM PRKP9DM0D.APP_ENT_MBRUUID_CFCR_SV_PHONE_EVENT
+    WHERE PHONE_NR IS NOT NULL 
+      AND PHONE_AREA_CD IS NOT NULL 
+      AND TRIM(PHONE_NR) <> ''
+      AND TRIM(PHONE_AREA_CD) <> ''
+      AND PRTY_ID = '029683828'
+)
+
+
+
+SELECT 
+    PRTY_ID,
+    PHONE_AREA_CD,
+    PHONE_NR,
+    (PHONE_AREA_CD || '-' || PHONE_NR) AS FULLPHONENUM,
+    CNTC_PT_VER_GMT_TS,
     CASE 
         WHEN ROW_NUMBER() OVER (
             PARTITION BY PRTY_ID, PHONE_AREA_CD, PHONE_NR
