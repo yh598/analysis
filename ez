@@ -1,3 +1,10 @@
+df_ph.filter(col('FULLPHONENUM') != '!!') \
+     .groupBy('FULLPHONENUM') \
+     .count() \
+     .filter(col('count') > 1) \
+     .orderBy(desc('count')) \
+     .show()
+
 SELECT 
     USAA_PARTY_PD_ID,
     SESSION_CREATE_TS,
