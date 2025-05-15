@@ -5,6 +5,94 @@ SELECT
     CITY_NM,
     STATE_CD,
     COUNTRY_CD,
+    GPS_YCOORD_TXT AS LAT,  -- Corrected latitude
+    GPS_XCOORD_TXT AS LNG,  -- Corrected longitude
+
+    -- Time lapse in hours
+    TIMESTAMPDIFF(HOUR, 
+        LAG(SESSION_CREATE_TS) OVER (
+            PARTITION BY USAA_PARTY_PD_ID ORDER BY SESSION_CREATE_TS
+        ),
+        SESSION_CREATE_TS
+    ) AS TIME_LAPSE_HOURS,
+
+    -- Distance in miles
+    2 * 3958.8 * ASIN(SQRT(
+        POWER(SIN(RADIANS(
+            TRY_TO_DOUBLE(GPS_YCOORD_TXT) - 
+            LAG(TRY_TO_DOUBLE(GPS_YCOORD_TXT)) OVER (
+                PARTITION BY USAA_PARTY_PD_ID ORDER BY SESSION_CREATE_TS
+            )
+        ) / 2), 2) +
+        COS(RADIANS(TRY_TO_DOUBLE(GPS_YCOORD_TXT))) *
+        COS(RADIANS(
+            LAG(TRY_TO_DOUBLE(GPS_YCOORD_TXT)) OVER (
+                PARTITION BY USAA_PARTY_PD_ID ORDER BY SESSION_CREATE_TS
+            )
+        )) *
+        POWER(SIN(RADIANS(
+            TRY_TO_DOUBLE(GPS_XCOORD_TXT) - 
+            LAG(TRY_TO_DOUBLE(GPS_XCOORD_TXT)) OVER (
+                PARTITION BY USAA_PARTY_PD_ID ORDER BY SESSION_CREATE_TS
+            )
+        ) / 2), 2)
+    )) AS DISTANCE_MILES,
+
+    -- IP change flag
+    CASE 
+        WHEN IP_ADDRESS_TXT != LAG(IP_ADDRESS_TXT) OVER (
+            PARTITION BY USAA_PARTY_PD_ID ORDER BY SESSION_CREATE_TS
+        ) THEN 1 ELSE 0
+    END AS IP_CHANGE_FLAG,
+
+    -- Risk flag based on distance, time lapse, or IP change
+    CASE 
+        WHEN (
+            2 * 3958.8 * ASIN(SQRT(
+                POWER(SIN(RADIANS(
+                    TRY_TO_DOUBLE(GPS_YCOORD_TXT) - 
+                    LAG(TRY_TO_DOUBLE(GPS_YCOORD_TXT)) OVER (
+                        PARTITION BY USAA_PARTY_PD_ID ORDER BY SESSION_CREATE_TS
+                    )
+                ) / 2), 2) +
+                COS(RADIANS(TRY_TO_DOUBLE(GPS_YCOORD_TXT))) *
+                COS(RADIANS(
+                    LAG(TRY_TO_DOUBLE(GPS_YCOORD_TXT)) OVER (
+                        PARTITION BY USAA_PARTY_PD_ID ORDER BY SESSION_CREATE_TS
+                    )
+                )) *
+                POWER(SIN(RADIANS(
+                    TRY_TO_DOUBLE(GPS_XCOORD_TXT) - 
+                    LAG(TRY_TO_DOUBLE(GPS_XCOORD_TXT)) OVER (
+                        PARTITION BY USAA_PARTY_PD_ID ORDER BY SESSION_CREATE_TS
+                    )
+                ) / 2), 2)
+            )) > 100 
+            AND TIMESTAMPDIFF(HOUR, 
+                LAG(SESSION_CREATE_TS) OVER (
+                    PARTITION BY USAA_PARTY_PD_ID ORDER BY SESSION_CREATE_TS
+                ),
+                SESSION_CREATE_TS
+            ) < 1
+        ) OR (
+            IP_ADDRESS_TXT != LAG(IP_ADDRESS_TXT) OVER (
+                PARTITION BY USAA_PARTY_PD_ID ORDER BY SESSION_CREATE_TS
+            )
+        ) THEN 1 ELSE 0
+    END AS RISK_FLAG
+
+FROM PRKP9DM0D.SNF_M_FRD_CU_MBRSESSIONS_DTL
+WHERE USAA_PARTY_PD_ID = '008718343'
+
+
+
+SELECT 
+    USAA_PARTY_PD_ID,
+    SESSION_CREATE_TS,
+    IP_ADDRESS_TXT,
+    CITY_NM,
+    STATE_CD,
+    COUNTRY_CD,
     GPS_XCOORD_TXT AS LAT,
     GPS_YCOORD_TXT AS LNG,
 
