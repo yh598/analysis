@@ -1,3 +1,37 @@
+SELECT 
+    a.USAA_PARTY_PD_ID,
+    a.PARTITION_DT,
+    COUNT(DISTINCT cleaned_phone_number) AS TOTAL_UNIQUE_PHONES,
+    DATEDIFF(
+        a.PARTITION_DT, 
+        MAX(
+            CASE 
+                WHEN CNTC_PT_VER_GMT_TS <= a.PARTITION_DT THEN CNTC_PT_VER_GMT_TS 
+                ELSE NULL 
+            END
+        )
+    ) AS DAYS_SINCE_LAST_PHONE_CHANGE
+FROM (
+    SELECT 
+        PRTY_ID,
+        CNTC_PT_VER_GMT_TS,
+        -- Normalize and merge phone numbers
+        CASE 
+            WHEN INTL_PHONE_NR IS NOT NULL AND TRIM(INTL_PHONE_NR) <> '' 
+                THEN REGEXP_REPLACE(INTL_PHONE_NR, '[\\s()\\-]', '')
+            ELSE REGEXP_REPLACE(concat(PHONE_AREA_CD, PHONE_NR), '[\\s()\\-]', '')
+        END AS cleaned_phone_number
+    FROM PBKGPDMDB.APP_ENT_MRHUB.CFCR_SV_PHONE_EVENT
+    WHERE 
+        (INTL_PHONE_NR IS NOT NULL AND TRIM(INTL_PHONE_NR) <> '')
+        OR 
+        (PHONE_NR IS NOT NULL AND PHONE_AREA_CD IS NOT NULL AND TRIM(PHONE_NR) <> '' AND TRIM(PHONE_AREA_CD) <> '')
+) b
+JOIN BNK22952_E225_DETRO_DIGITAL_TRAIN a
+    ON a.USAA_PARTY_PD_ID = b.PRTY_ID
+GROUP BY a.USAA_PARTY_PD_ID, a.PARTITION_DT
+
+
 phone = session.sql("""
     SELECT 
         PRTY_ID,
