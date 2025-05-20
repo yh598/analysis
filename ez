@@ -1,3 +1,43 @@
+phone = session.sql("""
+    SELECT 
+        PRTY_ID,
+        MAX(
+            CASE 
+                WHEN ROW_NUM_FIRST_USE = 1 THEN CNTC_PT_VER_GMT_TS 
+            END
+        ) AS LAST_PHONE_CHANGE_TS,
+        COUNT(DISTINCT CLEANED_PHONE_NUMBER) AS TOTAL_UNIQUE_PHONES
+    FROM (
+        SELECT 
+            PRTY_ID,
+            CNTC_PT_VER_GMT_TS,
+            -- Use INTL_PHONE_NR if available, otherwise fallback to domestic
+            CASE 
+                WHEN INTL_PHONE_NR IS NOT NULL AND TRIM(INTL_PHONE_NR) <> '' 
+                    THEN REGEXP_REPLACE(INTL_PHONE_NR, '[\\s()\\-]', '')
+                ELSE REGEXP_REPLACE(concat(PHONE_AREA_CD, PHONE_NR), '[\\s()\\-]', '')
+            END AS CLEANED_PHONE_NUMBER,
+            ROW_NUMBER() OVER (
+                PARTITION BY PRTY_ID, 
+                             CASE 
+                                 WHEN INTL_PHONE_NR IS NOT NULL AND TRIM(INTL_PHONE_NR) <> '' 
+                                     THEN REGEXP_REPLACE(INTL_PHONE_NR, '[\\s()\\-]', '')
+                                 ELSE REGEXP_REPLACE(concat(PHONE_AREA_CD, PHONE_NR), '[\\s()\\-]', '')
+                             END
+                ORDER BY CNTC_PT_VER_GMT_TS ASC
+            ) AS ROW_NUM_FIRST_USE
+        FROM PBKGPDMDB.APP_ENT_MRHUB.CFCR_SV_PHONE_EVENT
+        WHERE 
+            (INTL_PHONE_NR IS NOT NULL AND TRIM(INTL_PHONE_NR) <> '')
+            OR 
+            (PHONE_NR IS NOT NULL AND PHONE_AREA_CD IS NOT NULL AND TRIM(PHONE_NR) <> '' AND TRIM(PHONE_AREA_CD) <> '')
+    )
+    GROUP BY PRTY_ID
+""")
+
+phone.createOrReplaceTempView("phone")
+
+
 df = session.sql(f"""
     SELECT 
         a.FRAUD,
