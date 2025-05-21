@@ -1,3 +1,23 @@
+def clean_sql_columns(raw_columns: list, prefix_to_remove: str) -> list:
+    return [
+        line.replace('"', '').replace(prefix_to_remove, '').strip()
+        for line in raw_columns
+    ]
+
+# Example usage:
+raw_sql_lines = [
+    '"VIEW_MV_SCR2TGT_DESTI01_V1.SCORE" VARCHAR(16777216),',
+    '"VIEW_MV_SCR2TGT_DESTI01_V1.FRAUD" NUMBER(38,0),',
+    # ...
+]
+
+prefix = 'VIEW_MV_SCR2TGT_DESTI01_V1.'
+cleaned = clean_sql_columns(raw_sql_lines, prefix)
+
+for col in cleaned:
+    print(col)
+
+
 from snowflake.snowpark.types import IntegerType, FloatType, DoubleType, LongType, StructType
 from snowflake.ml.modeling.xgboost import XGBClassifier
 from snowflake.ml.modeling.pipeline import Pipeline
