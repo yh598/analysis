@@ -1,3 +1,12 @@
+# Automatically exclude non-numeric (categorical) columns
+numeric_cols = [field.name for field in train.schema.fields 
+                if str(field.dataType) in ['IntegerType', 'DoubleType', 'FloatType', 'LongType'] 
+                and field.name not in ("FRAUD", "USAA_PARTY_PD_ID", "PARTITION_DT")]
+
+feature_cols = numeric_cols
+target_col = "FRAUD"
+
+
 from pyspark.sql.functions import col, sum as _sum, count
 
 fraud_rate_df = df.select(
