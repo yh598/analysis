@@ -1,3 +1,83 @@
+df = session.sql("""
+WITH phone_ranked AS (
+  SELECT *, 
+    ROW_NUMBER() OVER (PARTITION BY USAA_PARTY_PD_ID, PARTITION_DT ORDER BY LAST_PHONE_CHANGE_TS DESC) AS rn
+  FROM phone
+),
+phone_filtered AS (
+  SELECT * FROM phone_ranked WHERE rn = 1
+),
+
+email_ranked AS (
+  SELECT *, 
+    ROW_NUMBER() OVER (PARTITION BY USAA_PARTY_PD_ID, PARTITION_DT ORDER BY LAST_EMAIL_CHANGE_TS DESC) AS rn
+  FROM email
+),
+email_filtered AS (
+  SELECT * FROM email_ranked WHERE rn = 1
+),
+
+address_ranked AS (
+  SELECT *, 
+    ROW_NUMBER() OVER (PARTITION BY USAA_PARTY_PD_ID, PARTITION_DT ORDER BY LAST_ADDRESS_CHANGE_TS DESC) AS rn
+  FROM address
+),
+address_filtered AS (
+  SELECT * FROM address_ranked WHERE rn = 1
+),
+
+ip_ranked AS (
+  SELECT *, 
+    ROW_NUMBER() OVER (PARTITION BY USAA_PARTY_PD_ID, PARTITION_DT ORDER BY SESSION_CREATE_TS DESC) AS rn
+  FROM ip_features
+),
+ip_filtered AS (
+  SELECT * FROM ip_ranked WHERE rn = 1
+)
+
+-- Final join
+SELECT 
+  a.FRAUD,
+  a.PARTITION_DT,
+  a.USAA_PARTY_PD_ID,
+
+  -- Phone features
+  b.TOTAL_UNIQUE_PHONE,
+  b.DAYS_SINCE_LAST_PHONE_CHANGE,
+
+  -- Email features
+  c.TOTAL_UNIQUE_EMAIL,
+  c.DAYS_SINCE_LAST_EMAIL_CHANGE,
+
+  -- Address features
+  d.TOTAL_UNIQUE_ADDRESS,
+  d.DAYS_SINCE_LAST_ADDRESS_CHANGE,
+
+  -- IP features
+  e.UNIQUE_IP_COUNT,
+  e.DAYS_SINCE_LAST_IP_CHANGE,
+  e.TIME_LAPSE_SINCE_LAST_SESSION,
+  e.DISTANCE_FROM_LAST_SESSION,
+  e.IP_CHANGE_FLAG,
+  e.IMPOSSIBLE_TRAVEL_FLAG
+
+FROM BNK22952_E225.DESTRO_DIGITAL_TRAIN a
+
+LEFT JOIN phone_filtered b 
+  ON a.USAA_PARTY_PD_ID = b.USAA_PARTY_PD_ID AND a.PARTITION_DT = b.PARTITION_DT
+
+LEFT JOIN email_filtered c 
+  ON a.USAA_PARTY_PD_ID = c.USAA_PARTY_PD_ID AND a.PARTITION_DT = c.PARTITION_DT
+
+LEFT JOIN address_filtered d 
+  ON a.USAA_PARTY_PD_ID = d.USAA_PARTY_PD_ID AND a.PARTITION_DT = d.PARTITION_DT
+
+LEFT JOIN ip_filtered e 
+  ON a.USAA_PARTY_PD_ID = e.USAA_PARTY_PD_ID AND a.PARTITION_DT = e.PARTITION_DT
+""")
+
+
+
 ip_features = session.sql("""
 WITH base AS (
   SELECT
