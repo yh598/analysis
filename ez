@@ -1,3 +1,34 @@
+from snowflake.snowpark.types import IntegerType, FloatType, DoubleType, LongType, StructType
+from snowflake.ml.modeling.xgboost import XGBClassifier
+from snowflake.ml.modeling.pipeline import Pipeline
+from snowflake.ml.modeling.preprocessing import Imputer
+
+# Step 1: Define numeric types
+numeric_types = (IntegerType, FloatType, DoubleType, LongType)
+
+# Step 2: Filter numeric columns
+numeric_cols = [
+    field.name for field in train.schema.fields
+    if isinstance(field.datatype, numeric_types)
+    and field.name not in ("FRAUD", "USAA_PARTY_PD_ID", "PARTITION_DT")
+]
+
+# Step 3: Define target column and features
+feature_cols = numeric_cols
+target_col = "FRAUD"
+
+# Step 4: Train with Snowpark XGBoost
+xgb = XGBClassifier(
+    input_cols=feature_cols,
+    label_cols=target_col,
+    output_cols=["PREDICTION"],
+    random_state=123
+)
+
+pipeline = Pipeline(stages=[xgb])
+pipeline.fit(train)
+
+
 from pyspark.sql.types import NumericType
 
 numeric_cols = [field.name for field in train.schema.fields 
