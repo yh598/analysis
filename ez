@@ -1,3 +1,23 @@
+from snowflake.snowpark import Session
+from snowflake.snowpark.functions import col
+
+raw_table = "PBNKEZ250.EZ250.DIGITAL_DATA_1_PCT_2025_01_01_2025_03_31"
+df_raw = session.sql(f"SELECT * FROM {raw_table}")
+
+prefix_to_remove = "VIEW_MV_SCR2TGT_DESTI01_V1."
+raw_columns = [c.name for c in df_raw.schema]
+
+cleaned_columns = [
+    col(c.name).alias(c.name.replace('"', '').replace(prefix_to_remove, '').strip())
+    for c in df_raw.schema
+]
+
+df_cleaned = df_raw.select(*cleaned_columns)
+
+cleaned_table_name = "EZ250.DIGITAL_DATA_1_PCT_CLEANED"
+df_cleaned.write.mode("overwrite").save_as_table(cleaned_table_name)
+
+
 def generate_clean_create_table(table_name: str, raw_columns: list, prefix_to_remove: str) -> str:
     cleaned_columns = [
         line.replace('"', '').replace(prefix_to_remove, '').strip().rstrip(',')
