@@ -1,3 +1,13 @@
+from pyspark.sql.types import NumericType
+
+numeric_cols = [field.name for field in train.schema.fields 
+                if isinstance(field.dataType, NumericType)
+                and field.name not in ("FRAUD", "USAA_PARTY_PD_ID", "PARTITION_DT")]
+
+feature_cols = numeric_cols
+target_col = "FRAUD"
+
+
 # Automatically exclude non-numeric (categorical) columns
 numeric_cols = [field.name for field in train.schema.fields 
                 if str(field.dataType) in ['IntegerType', 'DoubleType', 'FloatType', 'LongType'] 
