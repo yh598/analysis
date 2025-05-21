@@ -1,3 +1,26 @@
+def generate_clean_create_table(table_name: str, raw_columns: list, prefix_to_remove: str) -> str:
+    cleaned_columns = [
+        line.replace('"', '').replace(prefix_to_remove, '').strip().rstrip(',')
+        for line in raw_columns
+    ]
+    column_definitions = ",\n    ".join(cleaned_columns)
+    create_table_sql = f"""CREATE OR REPLACE TABLE {table_name} (
+    {column_definitions}
+);"""
+    return create_table_sql
+
+# Example usage:
+raw_sql_lines = [
+    '"VIEW_MV_SCR2TGT_DESTI01_V1.SCORE" VARCHAR(16777216),',
+    '"VIEW_MV_SCR2TGT_DESTI01_V1.FRAUD" NUMBER(38,0),',
+    # ... more lines
+]
+prefix = 'VIEW_MV_SCR2TGT_DESTI01_V1.'
+table_name = 'PBNKEZ250.EZ250.DIGITAL_DATA_1_PCT_2025_01_01_2025_03_31'
+
+print(generate_clean_create_table(table_name, raw_sql_lines, prefix))
+
+
 def clean_sql_columns(raw_columns: list, prefix_to_remove: str) -> list:
     return [
         line.replace('"', '').replace(prefix_to_remove, '').strip()
