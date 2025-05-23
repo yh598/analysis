@@ -1,3 +1,54 @@
+SELECT
+    a.USAA_PARTY_PD_ID,
+    a.PARTITION_DT,
+    COUNT(DISTINCT cleaned_phone_number) AS TOTAL_UNIQUE_PHONE,
+    DATEDIFF(
+        'day',
+        MAX(CASE WHEN b.CNTC_PT_VER_GMT_TS < a.PARTITION_DT THEN b.CNTC_PT_VER_GMT_TS ELSE NULL END),
+        a.PARTITION_DT
+    ) AS DAYS_SINCE_LAST_PHONE_CHANGE,
+
+    -- Counts of new phone numbers added in last N days
+    COUNT(DISTINCT CASE 
+        WHEN DATEDIFF('day', b.CNTC_PT_VER_GMT_TS, a.PARTITION_DT) <= 1 THEN cleaned_phone_number 
+    END) AS PHONE_ADDED_LAST_1_DAY,
+
+    COUNT(DISTINCT CASE 
+        WHEN DATEDIFF('day', b.CNTC_PT_VER_GMT_TS, a.PARTITION_DT) <= 3 THEN cleaned_phone_number 
+    END) AS PHONE_ADDED_LAST_3_DAYS,
+
+    COUNT(DISTINCT CASE 
+        WHEN DATEDIFF('day', b.CNTC_PT_VER_GMT_TS, a.PARTITION_DT) <= 7 THEN cleaned_phone_number 
+    END) AS PHONE_ADDED_LAST_7_DAYS,
+
+    COUNT(DISTINCT CASE 
+        WHEN DATEDIFF('day', b.CNTC_PT_VER_GMT_TS, a.PARTITION_DT) <= 30 THEN cleaned_phone_number 
+    END) AS PHONE_ADDED_LAST_30_DAYS,
+
+    COUNT(DISTINCT CASE 
+        WHEN DATEDIFF('day', b.CNTC_PT_VER_GMT_TS, a.PARTITION_DT) <= 60 THEN cleaned_phone_number 
+    END) AS PHONE_ADDED_LAST_60_DAYS
+
+FROM (
+    SELECT 
+        PRTY_ID,
+        CNTC_PT_VER_GMT_TS,
+        CASE 
+            WHEN INITL_PHONE_NR IS NOT NULL AND TRIM(INITL_PHONE_NR) <> '' 
+            THEN REGEXP_REPLACE(INITL_PHONE_NR, '[^0-9]', '') 
+            ELSE REGEXP_REPLACE(CONCAT(PHONE_AREA_CD, PHONE_NR), '[^0-9]', '') 
+        END AS cleaned_phone_number
+    FROM PBKPGDMDD.APP_ENT_MBHUB_CFCR.SW_PHONE_EVENT
+    WHERE INITL_PHONE_NR IS NOT NULL AND TRIM(INITL_PHONE_NR) <> ''
+          AND PHONE_NR IS NOT NULL AND PHONE_AREA_CD IS NOT NULL 
+          AND TRIM(PHONE_NR) <> '' AND TRIM(PHONE_AREA_CD) <> ''
+) b
+JOIN ENBK2250.EZ258.DIGITAL_DATA_1_PCT a
+    ON a.USAA_PARTY_PD_ID = b.PRTY_ID
+GROUP BY a.USAA_PARTY_PD_ID, a.PARTITION_DT
+
+
+
 from snowflake.snowpark import Session
 from snowflake.snowpark.functions import col
 
