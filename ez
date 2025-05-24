@@ -1,4 +1,26 @@
 from pyspark.sql.functions import col
+from math import ceil
+
+max_rows_per_batch = 100_000
+
+for i, dt in enumerate(partition_dates):
+    print(f"Processing partition {i+1}/{len(partition_dates)}: PARTITION_DT = {dt}")
+    batch_df = df.filter(col("PARTITION_DT") == dt)
+    count = batch_df.count()
+
+    if count == 0:
+        continue
+
+    num_chunks = ceil(count / max_rows_per_batch)
+    for j in range(num_chunks):
+        offset = j * max_rows_per_batch
+        chunk_df = batch_df.limit(offset + max_rows_per_batch).subtract(batch_df.limit(offset))
+        
+        print(f"  Writing chunk {j+1}/{num_chunks} ({chunk_df.count()} rows)")
+        chunk_df.write_save_as_table(full_table_name, mode='append')
+
+
+from pyspark.sql.functions import col
 
 # Get unique partition dates
 partition_dates = [row["PARTITION_DT"] for row in df.select("PARTITION_DT").distinct().collect()]
