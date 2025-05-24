@@ -1,3 +1,24 @@
+from pyspark.sql.functions import col
+
+# Get unique partition dates
+partition_dates = [row["PARTITION_DT"] for row in df.select("PARTITION_DT").distinct().collect()]
+partition_dates = sorted(partition_dates)  # Optional: sort for predictable order
+
+# Define destination table
+full_table_name = '.'.join([database, schema, 'DESTRO_DIGITAL_TRAIN_FRAUD_FEATURES'])
+
+# Loop over partition dates and write each in append mode
+for i, dt in enumerate(partition_dates):
+    print(f"Writing batch {i+1}/{len(partition_dates)} for PARTITION_DT = {dt}")
+    batch_df = df.filter(col("PARTITION_DT") == dt)
+    
+    if batch_df.count() == 0:
+        continue  # skip empty partitions
+
+    batch_df.write_save_as_table(full_table_name, mode='append')
+
+
+
 SELECT
     a.USAA_PARTY_PD_ID,
     a.PARTITION_DT,
