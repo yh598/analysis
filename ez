@@ -1,3 +1,11 @@
+df = session.sql("""
+    SELECT CURRENT_WAREHOUSE() AS WAREHOUSE, WAREHOUSE_SIZE 
+    FROM INFORMATION_SCHEMA.WAREHOUSES 
+    WHERE WAREHOUSE_NAME = CURRENT_WAREHOUSE()
+""")
+df.show()
+
+
 from snowflake.snowpark import Session
 from snowflake.snowpark.functions import *
 from snowflake.snowpark.window import Window
