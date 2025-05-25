@@ -1,3 +1,89 @@
+from snowflake.snowpark import Session
+from snowflake.snowpark.functions import *
+from snowflake.snowpark.window import Window
+
+# Step 1: Define training user list
+train_df = session.table("pbankez520.ZZ520_FAM_internet_train_SESSION_2024_11_2025_03")
+user_ids_df = train_df.select("USAA_PARTY_PD_ID").distinct()
+
+# Step 2: Filter session data
+session_raw = session.table("EFDBPRD.SMF_EF_MD_EV_CUBESESSION_DTL")
+filtered_sessions = (
+    session_raw.join(user_ids_df, "USAA_PARTY_PD_ID")
+    .filter((col("STATE_CD") != "None") & (col("IP_ADDRESS_TXT") != "0.0.0.0"))
+    .with_column("LAT", col("GPS_XCOORD_TXT").cast("DOUBLE"))
+    .with_column("LNG", col("GPS_YCOORD_TXT").cast("DOUBLE"))
+)
+
+# Step 3: Add lag features
+window_spec = Window.partition_by("USAA_PARTY_PD_ID").order_by("SESSION_CREATE_TS")
+lagged = (
+    filtered_sessions
+    .with_column("PREV_SESSION_TS", lag("SESSION_CREATE_TS").over(window_spec))
+    .with_column("PREV_IP", lag("IP_ADDRESS_TXT").over(window_spec))
+    .with_column("PREV_LAT", lag("LAT").over(window_spec))
+    .with_column("PREV_LNG", lag("LNG").over(window_spec))
+)
+
+# Step 4: Join with partition date
+joined = (
+    lagged.join(train_df, "USAA_PARTY_PD_ID")
+    .filter(col("SESSION_CREATE_TS") < col("PARTITION_DT"))
+)
+
+# Step 5: Feature engineering
+features = (
+    joined
+    .with_column("DAYS_SINCE_LAST_IP_CHANGE", datediff("day", col("SESSION_CREATE_TS"), col("PARTITION_DT")))
+    .with_column("TIME_LAPSE_HOURS", (col("SESSION_CREATE_TS").cast("long") - col("PREV_SESSION_TS").cast("long")) / 3600.0)
+    .with_column(
+        "DISTANCE_MILES",
+        2 * 3958.8 * asin(sqrt(
+            pow(sin(radians(col("LAT") - col("PREV_LAT")) / 2), 2) +
+            cos(radians(col("LAT"))) * cos(radians(col("PREV_LAT"))) *
+            pow(sin(radians(col("LNG") - col("PREV_LNG")) / 2), 2)
+        ))
+    )
+    .with_column("IP_CHANGE_FLAG", when(col("IP_ADDRESS_TXT") != col("PREV_IP"), 1).otherwise(0))
+    .with_column("TRAVEL_SPEED_MPH", when(col("TIME_LAPSE_HOURS") > 0, col("DISTANCE_MILES") / col("TIME_LAPSE_HOURS")))
+    .with_column("IMPOSSIBLE_TRAVEL_FLAG", when((col("DISTANCE_MILES") > 100) & (col("TIME_LAPSE_HOURS") < 1), 1).otherwise(0))
+)
+
+# Step 6: IP aggregation
+agg_ip = (
+    features.group_by("USAA_PARTY_PD_ID", "PARTITION_DT")
+    .agg(
+        count_distinct("IP_ADDRESS_TXT").alias("TOTAL_UNIQUE_IP"),
+        count_distinct(when(datediff("day", col("SESSION_CREATE_TS"), col("PARTITION_DT")) <= 1, col("IP_ADDRESS_TXT"))).alias("IP_ADDED_LAST_1_DAYS"),
+        count_distinct(when(datediff("day", col("SESSION_CREATE_TS"), col("PARTITION_DT")) <= 3, col("IP_ADDRESS_TXT"))).alias("IP_ADDED_LAST_3_DAYS"),
+        count_distinct(when(datediff("day", col("SESSION_CREATE_TS"), col("PARTITION_DT")) <= 7, col("IP_ADDRESS_TXT"))).alias("IP_ADDED_LAST_7_DAYS"),
+        count_distinct(when(datediff("day", col("SESSION_CREATE_TS"), col("PARTITION_DT")) <= 30, col("IP_ADDRESS_TXT"))).alias("IP_ADDED_LAST_30_DAYS"),
+        count_distinct(when(datediff("day", col("SESSION_CREATE_TS"), col("PARTITION_DT")) <= 60, col("IP_ADDRESS_TXT"))).alias("IP_ADDED_LAST_60_DAYS")
+    )
+)
+
+# Step 7: Get most recent session per ID/date
+row_num_spec = Window.partition_by("USAA_PARTY_PD_ID", "PARTITION_DT").order_by(col("SESSION_CREATE_TS").desc())
+last_session = (
+    features
+    .with_column("rn", row_number().over(row_num_spec))
+    .filter(col("rn") == 1)
+    .select(
+        "USAA_PARTY_PD_ID", "PARTITION_DT",
+        "DAYS_SINCE_LAST_IP_CHANGE",
+        col("TIME_LAPSE_HOURS").alias("TIME_LAPSE_SINCE_LAST_SESSION"),
+        col("DISTANCE_MILES").alias("DISTANCE_FROM_LAST_SESSION"),
+        "TRAVEL_SPEED_MPH",
+        "IP_CHANGE_FLAG",
+        "IMPOSSIBLE_TRAVEL_FLAG"
+    )
+)
+
+# Step 8: Final output
+final_df = last_session.join(agg_ip, ["USAA_PARTY_PD_ID", "PARTITION_DT"])
+final_df.show()
+
+
 WITH target_users AS (
     SELECT DISTINCT USAA_PARTY_PD_ID 
     FROM pbankez520.ZZ520_FAM_internet_train_SESSION_2024_11_2025_03
