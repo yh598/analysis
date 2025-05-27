@@ -1,3 +1,42 @@
+from snowflake.snowpark import Session
+from snowflake.snowpark.functions import col
+import math
+
+# Setup: replace with your session parameters
+connection_parameters = {
+    "account": "<your_account>",
+    "user": "<your_user>",
+    "password": "<your_password>",
+    "role": "<your_role>",
+    "warehouse": "<your_warehouse>",
+    "database": "<your_database>",
+    "schema": "<your_schema>"
+}
+
+session = Session.builder.configs(connection_parameters).create()
+
+# Optional: Increase session timeout
+session.sql("ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = 7200").collect()
+
+# Optional: Scale up warehouse if necessary
+# session.sql("ALTER WAREHOUSE <your_warehouse> SET WAREHOUSE_SIZE = 'LARGE'").collect()
+
+# Example: load your large dataframe
+df = session.table("your_source_table")
+
+# Partitioning config
+batch_size = 100000  # adjust based on volume
+total_rows = df.count()
+num_batches = math.ceil(total_rows / batch_size)
+
+for i in range(num_batches):
+    offset = i * batch_size
+    df_batch = df.limit(batch_size).offset(offset)
+    df_batch.write.mode("append").save_as_table("your_target_table")
+
+print("Data written in batches successfully.")
+
+
 df = session.sql("""
     SELECT CURRENT_WAREHOUSE() AS WAREHOUSE, WAREHOUSE_SIZE 
     FROM INFORMATION_SCHEMA.WAREHOUSES 
