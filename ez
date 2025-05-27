@@ -1,3 +1,30 @@
+from pyspark.sql import SparkSession
+from pyspark.storagelevel import StorageLevel
+
+# Assuming `df` is your DataFrame to be saved
+# Step 1: Cache/persist if transformations are expensive
+df = df.persist(StorageLevel.MEMORY_AND_DISK)
+
+# Step 2: Reduce number of records per task with repartition
+df = df.repartition(200)  # Adjust based on cluster size and memory
+
+# Step 3: Drop unnecessary columns (if any)
+columns_to_keep = ['CONVERSATION_START_DATE', 'CONVERSATION_FILENAME', 'MEMBER_TERMINATE']  # replace with your needed columns
+df = df.select(*columns_to_keep)
+
+# Step 4: Save with smaller file sizes and memory-safe write
+df.write \
+  .mode("overwrite") \
+  .option("maxRecordsPerFile", 50000) \
+  .option("spark.sql.shuffle.partitions", 200) \
+  .saveAsTable("your_target_table_name")
+
+# Step 5: Refresh and analyze for performance
+spark.sql("REFRESH TABLE your_target_table_name")
+spark.sql("ANALYZE TABLE your_target_table_name COMPUTE STATISTICS")
+
+
+
 from snowflake.snowpark import Session
 from snowflake.snowpark.functions import col
 import math
