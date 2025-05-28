@@ -1,3 +1,20 @@
+# Load the source map from Excel
+df_source_map = pd.read_excel("FAM Data Source.xlsx", usecols=["Var", "Data Source"])
+
+# Rename columns for merging consistency
+df_source_map.rename(columns={'Var': 'feature', 'Data Source': 'data_source'}, inplace=True)
+
+# Filter out MAAC features
+non_maac_features = df_source_map[df_source_map['data_source'] != 'MAAC']['feature'].tolist()
+
+# Optional: verify excluded features
+print("Excluded MAAC features:", df_source_map[df_source_map['data_source'] == 'MAAC']['feature'].tolist())
+
+# Select only non-MAAC features from train
+train_df = train.select([col for col in train.columns if col in non_maac_features or col in ["USAA_PARTY_PD_ID", "PARTITION_DT", "IS_FRAUD"]])
+
+
+
 CASE 
     WHEN e.TIME_LAPSE_SINCE_LAST_SESSION = 0 THEN 0
     ELSE e.DISTANCE_FROM_LAST_SESSION / e.TIME_LAPSE_SINCE_LAST_SESSION
