@@ -1,3 +1,23 @@
+# Step 1: Read source map from Excel
+import pandas as pd
+
+df_source_map = pd.read_excel("FAM Data Source.xlsx", usecols=["Var", "Data Source"])
+df_source_map.columns = ['feature', 'data_source']
+
+# Step 2: Get list of MAAC substrings
+maac_keywords = df_source_map[df_source_map['data_source'] == 'MAAC']['feature'].tolist()
+
+# Step 3: Get columns to exclude (substring match)
+train_cols = train.columns
+cols_to_exclude = [col for col in train_cols if any(keyword in col for keyword in maac_keywords)]
+
+# Step 4: Get final columns to keep (exclude the MAAC columns)
+cols_to_keep = [col for col in train_cols if col not in cols_to_exclude]
+
+# Step 5: Filter train DataFrame
+train_filtered = train.select(cols_to_keep)
+
+
 # Load the source map from Excel
 df_source_map = pd.read_excel("FAM Data Source.xlsx", usecols=["Var", "Data Source"])
 
