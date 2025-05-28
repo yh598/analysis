@@ -1,3 +1,16 @@
+from snowflake.snowpark.functions import col
+
+# Step 1: Get distinct partition dates
+partition_dates = [row[0] for row in ip.select("PARTITION_DT").distinct().collect()]
+
+# Step 2: Loop through each partition date and write incrementally
+for dt in partition_dates:
+    print(f"Writing partition: {dt}")
+    ip_filtered = ip.filter(col("PARTITION_DT") == dt)
+    ip_filtered.write.save_as_table(full_table_name, mode="append")
+
+
+
 from pyspark.sql import SparkSession
 from pyspark.storagelevel import StorageLevel
 
