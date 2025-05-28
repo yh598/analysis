@@ -1,3 +1,9 @@
+CASE 
+    WHEN e.TIME_LAPSE_SINCE_LAST_SESSION = 0 THEN 0
+    ELSE e.DISTANCE_FROM_LAST_SESSION / e.TIME_LAPSE_SINCE_LAST_SESSION
+END AS TRAVEL_SPEED
+
+
 from snowflake.snowpark.functions import col
 
 # Step 1: Get distinct partition dates
