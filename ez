@@ -1,6 +1,32 @@
 import pandas as pd
 import numpy as np
 
+# Step 1: Load MAAC feature list from Excel
+df_source_map = pd.read_excel("FAM Data Source.xlsx", usecols=["Var", "Data Source"])
+df_source_map.columns = ['feature', 'data_source']
+
+# Step 2: Extract features flagged as MAAC
+maac_keywords = df_source_map[df_source_map['data_source'] == 'MAAC']['feature'].tolist()
+
+# Step 3: Drop MAAC-related columns from df using substring match
+cols_to_exclude = [col for col in df.columns if any(keyword in col for keyword in maac_keywords)]
+print("Excluding MAAC columns (vague match):", cols_to_exclude)
+
+df_filtered = df.drop(columns=cols_to_exclude, errors='ignore')
+
+# Step 4: Drop label and ID columns (e.g., fraud, usaa_party_pd_id)
+columns_to_drop = ['fraud', 'usaa_party_pd_id']
+df_clean = df_filtered.drop(columns=columns_to_drop, errors='ignore')
+
+# Step 5: Keep only numeric columns
+X = df_clean.select_dtypes(include=[np.number])
+
+# Step 6: Define target label
+y = df['fraud']
+
+import pandas as pd
+import numpy as np
+
 # Drop label and ID column
 df_clean = df.drop(columns=['fraud', 'usaa_party_pd_id'], errors='ignore')
 
