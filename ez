@@ -1,3 +1,9 @@
+tt_sampled = tt.sample(
+    with_replacement=False,
+    fraction=0.2,
+    seed=42
+)
+
 print("Original count:", tt.count())
 print("Sampled count:", tt_sampled.count())
 
