@@ -1,3 +1,13 @@
+# Basic statistics for numeric features
+feature_stats = df_clean[numeric_cols].describe().transpose()
+feature_stats['missing_pct'] = df_clean[numeric_cols].isnull().mean() * 100
+feature_stats['n_unique'] = df_clean[numeric_cols].nunique()
+
+import pandas as pd
+pd.set_option('display.float_format', lambda x: '%.2f' % x)
+feature_stats.sort_values(by='missing_pct', ascending=False).head(20)  # Show top 20 features with most missing
+
+
 tt_sampled = tt.sample(
     with_replacement=False,
     fraction=0.2,
