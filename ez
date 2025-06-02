@@ -1,3 +1,28 @@
+# Extract features flagged as Fraud or MAAC
+df_source_map = pd.read_excel("FAM Data Source.xlsx", usecols=["Var", "Data Source"])
+
+df_source_map.columns = ["feature", "data_source"]
+fraud_keywords = df_source_map[df_source_map["data_source"].str.contains("FRAUD", na=False)]["feature"].tolist()
+maac_keywords = df_source_map[df_source_map["data_source"].str.contains("MAAC", na=False)]["feature"].tolist()
+
+# Combine features to exclude
+cols_to_exclude = fraud_keywords + maac_keywords
+
+# Drop Fraud and MAAC features
+df_filtered = df.drop(columns=[col for col in df.columns if col in cols_to_exclude], errors="ignore")
+
+# Drop label and ID columns from feature matrix
+df_clean = df_filtered.drop(columns=["FRAUD", "USAA_PARTY_ID", "SAMPLE_R1", "random_val"], errors="ignore")
+
+# Identify numeric columns only
+numeric_cols = df_clean.select_dtypes(include=[np.number]).columns.tolist()
+
+# Final feature matrix
+X = df_clean[numeric_cols]
+y = df["FRAUD"]
+
+
+
 # Basic statistics for numeric features
 feature_stats = df_clean[numeric_cols].describe().transpose()
 feature_stats['missing_pct'] = df_clean[numeric_cols].isnull().mean() * 100
