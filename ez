@@ -1,3 +1,26 @@
+# Compute 4-week moving average
+df_trimmed['cnt_score_sys_ma4'] = df_trimmed['cnt_score_sys'].rolling(window=4, min_periods=1).mean()
+
+# Plot without fraud rate
+fig, ax = plt.subplots(figsize=(12, 6))
+
+# Bar plot for weekly volume
+ax.bar(df_trimmed['year_week'], df_trimmed['cnt_score_sys'], color='lightblue', label='Total Count')
+
+# Line plot for 4-week moving average
+ax.plot(df_trimmed['year_week'], df_trimmed['cnt_score_sys_ma4'], color='blue', linestyle='--', label='4-Week Moving Avg')
+
+# Labels and formatting
+ax.set_ylabel('Total Count')
+ax.set_xlabel('Week')
+ax.tick_params(axis='x', rotation=45)
+plt.title('Weekly Score Count and 4-Week Moving Average (2024)')
+plt.legend()
+plt.grid(True)
+fig.tight_layout()
+plt.show()
+
+
 import pandas as pd
 import matplotlib.pyplot as plt
 
