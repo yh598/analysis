@@ -1,3 +1,21 @@
+fig, ax = plt.subplots(figsize=(14, 6))
+ax.bar(df_trimmed['year_week'], df_trimmed['cnt_score_sys'], color='lightblue', label='Total Count')
+ax.plot(df_trimmed['year_week'], df_trimmed['cnt_score_sys_ma4'], color='blue', linestyle='--', label='4-Week Moving Avg')
+
+# Improve x-axis tick spacing
+xticks = df_trimmed['year_week'][::4]
+ax.set_xticks(range(0, len(df_trimmed), 4))
+ax.set_xticklabels(xticks, rotation=45)
+
+ax.set_ylabel('Total Count')
+ax.set_xlabel('Week')
+plt.title('Weekly Score Count and 4-Week Moving Average for FAM Activity Segment')
+plt.legend()
+plt.grid(True)
+fig.tight_layout()
+plt.show()
+
+
 # Compute 4-week moving average
 df_trimmed['cnt_score_sys_ma4'] = df_trimmed['cnt_score_sys'].rolling(window=4, min_periods=1).mean()
 
