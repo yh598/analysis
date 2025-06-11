@@ -1,4 +1,32 @@
 fig, ax = plt.subplots(figsize=(14, 6))
+
+# Bar plot for total weekly count
+ax.bar(df['year_week'], df['cnt_score_sys'], color='lightblue', label='Total Count')
+
+# Line plot for 4-week moving average
+ax.plot(df['year_week'], df['cnt_score_sys_ma4'], color='blue', linestyle='--', label='4-Week Moving Avg')
+
+# Improve x-axis tick spacing
+xticks = df['year_week'][::4]
+ax.set_xticks(range(0, len(df), 4))
+ax.set_xticklabels(xticks, rotation=45)
+
+# Add fraud rate (secondary axis)
+ax2 = ax.twinx()
+ax2.plot(df['year_week'], df['fraud_rate'], color='red', marker='o', label='Fraud Rate')
+ax2.set_ylabel('Fraud Rate')
+
+# Titles and formatting
+ax.set_ylabel('Total Count')
+ax.set_xlabel('Week')
+plt.title('Weekly Score Count, Fraud Rate, and 4-Week Moving Average for FAM Digital Segment')
+ax.legend(loc='upper left')
+ax2.legend(loc='upper right')
+plt.grid(True)
+fig.tight_layout()
+plt.show()
+
+fig, ax = plt.subplots(figsize=(14, 6))
 ax.bar(df_trimmed['year_week'], df_trimmed['cnt_score_sys'], color='lightblue', label='Total Count')
 ax.plot(df_trimmed['year_week'], df_trimmed['cnt_score_sys_ma4'], color='blue', linestyle='--', label='4-Week Moving Avg')
 
