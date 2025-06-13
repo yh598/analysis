@@ -1,3 +1,34 @@
+import matplotlib.dates as mdates
+
+# Create the dual-axis plot
+fig, ax1 = plt.subplots(figsize=(14, 6))
+
+# Plot precision and recall on the left y-axis
+ax1.plot(df["run_dt"], df["member_precision"], marker='o', color='tab:blue', label='Precision')
+ax1.plot(df["run_dt"], df["member_recall"], marker='s', color='tab:orange', label='Recall')
+ax1.set_xlabel("Run Date")
+ax1.set_ylabel("Precision / Recall", color='black')
+ax1.tick_params(axis='y', labelcolor='black')
+
+# Format x-axis to show fewer date labels
+ax1.xaxis.set_major_locator(mdates.WeekdayLocator(interval=2))  # Show label every 2 weeks
+ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+plt.xticks(rotation=45)
+
+# Create second y-axis for daily volume
+ax2 = ax1.twinx()
+ax2.bar(df["run_dt"], df["avg_daily_volume"], width=2, color='tab:green', alpha=0.3, label='Avg Daily Volume')
+ax2.set_ylabel("Avg Daily Volume", color='tab:green')
+ax2.tick_params(axis='y', labelcolor='tab:green')
+
+# Titles and legends
+fig.suptitle("Model Precision / Recall and Daily Volume Over Time")
+fig.legend(loc='upper center', bbox_to_anchor=(0.5, 1.05), ncol=3)
+fig.tight_layout()
+plt.show()
+
+
+
 import pandas as pd
 import matplotlib.pyplot as plt
 
