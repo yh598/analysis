@@ -1,3 +1,25 @@
+# Clean column names by dropping the "usaa_fco_dsd_ar_execution_mg_opt_orc_v1." prefix
+df_cleaned = df.copy()
+df_cleaned.columns = [col.replace("usaa_fco_dsd_ar_execution_mg_opt_orc_v1.", "") for col in df.columns]
+
+# Also update the normalized version with cleaned column names
+df_norm_cleaned = df_cleaned.copy()
+df_norm_cleaned[["precision_z", "recall_z", "volume_z"]] = df_cleaned[["member_precision", "member_recall", "avg_daily_volume"]].apply(zscore)
+
+# Confirm updated column names
+df_cleaned.columns
+
+# Drop duplicate rows from the cleaned dataframe
+df_cleaned = df_cleaned.drop_duplicates()
+
+# Also update the normalized dataframe accordingly
+df_norm_cleaned = df_cleaned.copy()
+df_norm_cleaned[["precision_z", "recall_z", "volume_z"]] = df_cleaned[["member_precision", "member_recall", "avg_daily_volume"]].apply(zscore)
+
+# Show the cleaned DataFrame
+import ace_tools as tools; tools.display_dataframe_to_user(name="Deduplicated Model Metrics", dataframe=df_cleaned)
+
+
 from scipy.stats import zscore
 import seaborn as sns
 
