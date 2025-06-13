@@ -1,3 +1,46 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Manually inputting the data extracted from the images
+data = {
+    "run_dt": [
+        "2025-02-07", "2025-06-04", "2025-06-04", "2025-01-01", 
+        "2024-05-29", "2024-05-29", "2024-05-17", "2024-05-17", "2024-05-15"
+    ],
+    "member_precision": [
+        0.593558, 0.592593, 0.592593, 0.591017, 0.586638, 0.470093, 0.470093, 0.468397, 0.468341
+    ],
+    "member_recall": [
+        0.247759, 0.169312, 0.169312, 0.183824, 0.161376, 0.221684, 0.221684, 0.153363, 0.323572
+    ],
+    "avg_daily_volume": [
+        40.7500, 6.7500, 6.7500, 26.4375, 66.8750, 66.8750, 55.3750, 55.3750, 119.4375
+    ]
+}
+
+# Create DataFrame
+df = pd.DataFrame(data)
+df["run_dt"] = pd.to_datetime(df["run_dt"])
+
+# Sort by run date
+df.sort_values("run_dt", inplace=True)
+
+# Plot
+plt.figure(figsize=(12, 6))
+plt.plot(df["run_dt"], df["member_precision"], marker='o', label='Precision')
+plt.plot(df["run_dt"], df["member_recall"], marker='s', label='Recall')
+plt.plot(df["run_dt"], df["avg_daily_volume"], marker='^', label='Avg Daily Volume')
+
+plt.xlabel("Run Date")
+plt.ylabel("Values")
+plt.title("Model Precision / Recall and Daily Volume Over Time")
+plt.legend()
+plt.grid(True)
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+
 fig, ax = plt.subplots(figsize=(14, 6))
 
 # Bar plot for total weekly count
