@@ -1,3 +1,47 @@
+from scipy.stats import zscore
+import seaborn as sns
+
+# Prepare normalized dataframe
+df_norm = df.copy()
+df_norm[["precision_z", "recall_z", "volume_z"]] = df[["member_precision", "member_recall", "avg_daily_volume"]].apply(zscore)
+
+# --- Plot 1: Scatter Plot with Volume as Size ---
+plt.figure(figsize=(12, 6))
+scatter = plt.scatter(df["member_precision"], df["member_recall"],
+                      s=df["avg_daily_volume"] * 2,  # Scale size for visibility
+                      c=df["avg_daily_volume"], cmap='viridis', alpha=0.7)
+plt.colorbar(scatter, label='Avg Daily Volume')
+plt.xlabel("Precision")
+plt.ylabel("Recall")
+plt.title("Precision vs Recall (Bubble Size = Volume)")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# --- Plot 2: Correlation Heatmap ---
+plt.figure(figsize=(6, 4))
+corr = df[["member_precision", "member_recall", "avg_daily_volume"]].corr()
+sns.heatmap(corr, annot=True, cmap="coolwarm", vmin=-1, vmax=1)
+plt.title("Correlation Matrix: Precision, Recall, Volume")
+plt.tight_layout()
+plt.show()
+
+# --- Plot 3: Normalized Time Series ---
+plt.figure(figsize=(14, 6))
+plt.plot(df["run_dt"], df_norm["precision_z"], marker='o', label="Precision (z-score)")
+plt.plot(df["run_dt"], df_norm["recall_z"], marker='s', label="Recall (z-score)")
+plt.plot(df["run_dt"], df_norm["volume_z"], marker='^', label="Volume (z-score)")
+plt.xlabel("Run Date")
+plt.ylabel("Z-Score")
+plt.title("Normalized Trends: Precision, Recall, Volume")
+plt.legend()
+plt.grid(True)
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+
+
 import matplotlib.dates as mdates
 
 # Create the dual-axis plot
