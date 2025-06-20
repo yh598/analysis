@@ -1,3 +1,91 @@
+def create_dynamic_phone_view(
+    session, 
+    source_table: str, 
+    phone_session_table: str, 
+    event_ts_col: str = "CNTC_PT_VER_GMT_TS", 
+    n_days_list = [1, 3, 7, 30, 60]
+):
+    """
+    Create phone feature view with dynamic n_day windows and dynamic phone session source.
+
+    Parameters:
+        session: Snowpark or Spark session object
+        source_table (str): Base table containing USAA_PARTY_PD_ID and event timestamp
+        phone_session_table (str): Name of the source phone session table to join with
+        event_ts_col (str): Event timestamp column name in source_table
+        n_days_list (list): List of N-day window thresholds (e.g. [1, 3, 7, 30, 60])
+
+    Returns:
+        None (creates or replaces a temp view named `phone`)
+    """
+
+    # Step 1: Create base training view with exploded n_day
+    n_day_values = ", ".join([f"({n})" for n in n_days_list])
+    session.sql(f"""
+        CREATE OR REPLACE TEMP VIEW base_train_data AS
+        SELECT 
+            e.USAA_PARTY_PD_ID,
+            e.{event_ts_col} AS event_ts,
+            n.n_day
+        FROM {source_table} e
+        JOIN (VALUES {n_day_values}) AS n(n_day) ON TRUE
+    """)
+
+    # Step 2: Create cleaned phone view
+    session.sql(f"""
+        CREATE OR REPLACE TEMP VIEW phone AS
+        SELECT
+            a.USAA_PARTY_PD_ID,
+            a.event_ts,
+            a.n_day,
+            COUNT(DISTINCT b.cleaned_phone_number) AS TOTAL_UNIQUE_PHONE,
+
+            -- Days since last phone change
+            DATEDIFF(
+                'day',
+                MAX(CASE 
+                    WHEN b.CNTC_PT_VER_GMT_TS < a.event_ts THEN b.CNTC_PT_VER_GMT_TS 
+                    ELSE NULL 
+                END),
+                a.event_ts
+            ) AS DAYS_SINCE_LAST_PHONE_CHANGE,
+
+            -- Count of phones added within n_day before event
+            COUNT(DISTINCT CASE
+                WHEN DATEDIFF('day', b.CNTC_PT_VER_GMT_TS, a.event_ts) <= a.n_day
+                     AND b.CNTC_PT_VER_GMT_TS < a.event_ts
+                THEN b.cleaned_phone_number
+            END) AS PHONE_ADDED_LAST_N_DAYS
+
+        FROM base_train_data a
+        LEFT JOIN (
+            SELECT 
+                PRTY_ID,
+                CNTC_PT_VER_GMT_TS,
+                REGEXP_REPLACE(
+                    REPLACE(CONCAT(PHONE_AREA_CD, PHONE_NR), '[^0-9]', ''), 
+                    '^(1)?(\\d{10})$', '\\2'
+                ) AS cleaned_phone_number
+            FROM {phone_session_table}
+            WHERE PHONE_NR IS NOT NULL AND TRIM(PHONE_NR) <> ''
+              AND PHONE_AREA_CD IS NOT NULL AND TRIM(PHONE_AREA_CD) <> ''
+        ) b
+        ON a.USAA_PARTY_PD_ID = b.PRTY_ID
+
+        GROUP BY a.USAA_PARTY_PD_ID, a.event_ts, a.n_day
+    """)
+
+create_dynamic_phone_view(
+    session=session,
+    source_table="your_event_table",
+    phone_session_table="PRXPBM28_E2259.FAM_INTENT_PHONE_SESSION_2024_11_2025_03",
+    event_ts_col="CNTC_PT_VER_GMT_TS",
+    n_days_list=[1, 3, 7, 30, 60]
+)
+
+
+
+
 # Clean column names by dropping the "usaa_fco_dsd_ar_execution_mg_opt_orc_v1." prefix
 df_cleaned = df.copy()
 df_cleaned.columns = [col.replace("usaa_fco_dsd_ar_execution_mg_opt_orc_v1.", "") for col in df.columns]
