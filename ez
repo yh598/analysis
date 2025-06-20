@@ -1,3 +1,71 @@
+def create_phone_feature_view(session, base_table: str):
+    """
+    Generate phone-related features for the input base table and register a temporary view 'phone'.
+    :param session: Snowflake Snowpark Session or SparkSession for executing SQL.
+    :param base_table: Fully qualified name of the base training table (including schema).
+    :return: DataFrame containing the computed features.
+    """
+    # Define the time window thresholds (in days) for feature generation
+    n_days_list = [1, 3, 7, 30, 60]
+    
+    # Step 1: Identify the latest FAM_INTERNET_TRAIN_SESSION_* table in schema EZ250
+    # (We assume lexicographically greatest table name corresponds to the latest)
+    tables_df = session.sql(
+        "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
+        "WHERE TABLE_SCHEMA = 'EZ250' AND TABLE_NAME LIKE 'FAM_INTERNET_TRAIN_SESSION_%'"
+    )
+    table_names = [row[0] for row in tables_df.collect()]
+    latest_session_table = max(table_names)  # pick the latest available session table
+    
+    # Step 2: Construct dynamic SQL query for phone features
+    # Generate conditional COUNT(DISTINCT ...) expressions for each n_day threshold
+    phone_added_cases = []
+    for n in n_days_list:
+        case_expr = (
+            f"COUNT(DISTINCT CASE "
+            f"WHEN DATEDIFF('day', b.CNTC_PT_VER_GMT_TS, a.event_ts) <= {n} "
+            f"AND b.CNTC_PT_VER_GMT_TS < a.event_ts THEN b.cleaned_phone_number END) "
+            f"AS PHONE_ADDED_LAST_{n}_DAYS"
+        )
+        phone_added_cases.append(case_expr)
+    phone_added_sql = ",\n            ".join(phone_added_cases)
+    
+    # Build the full SQL query string with the identified table and dynamic columns
+    sql_query = f"""
+SELECT
+    a.USAA_PARTY_PD_ID,
+    a.event_ts,
+    -- Total unique phone numbers (added before event_ts)
+    COUNT(DISTINCT CASE 
+        WHEN b.CNTC_PT_VER_GMT_TS < a.event_ts 
+        THEN b.cleaned_phone_number END
+    ) AS TOTAL_UNIQUE_PHONE,
+    -- Days since last phone change before event_ts
+    DATEDIFF('day',
+        MAX(CASE WHEN b.CNTC_PT_VER_GMT_TS < a.event_ts THEN b.CNTC_PT_VER_GMT_TS END),
+        a.event_ts
+    ) AS DAYS_SINCE_LAST_PHONE_CHANGE,
+    -- New phone numbers added in the last N days before event_ts
+    {phone_added_sql}
+FROM {base_table} AS a
+LEFT JOIN (
+    SELECT
+        USAA_PARTY_PD_ID,
+        CNTC_PT_VER_GMT_TS,
+        REGEXP_REPLACE(phone_nbr, '[^0-9]', '') AS cleaned_phone_number
+    FROM EZ250.{latest_session_table}
+    WHERE phone_nbr IS NOT NULL
+) AS b
+    ON a.USAA_PARTY_PD_ID = b.USAA_PARTY_PD_ID
+GROUP BY a.USAA_PARTY_PD_ID, a.event_ts
+"""
+    # Step 3: Execute the SQL query and create a temporary view for the results
+    result_df = session.sql(sql_query)
+    result_df.create_or_replace_temp_view("phone")  # In PySpark use createOrReplaceTempView
+    return result_df
+
+
+
 def create_dynamic_phone_view(
     session, 
     source_table: str, 
