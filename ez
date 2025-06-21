@@ -1,3 +1,91 @@
+def create_phone_feature_view(session, base_table: str, phone_session_table: str):
+    """
+    Generate phone-related features including counts of new phones and members sharing phones.
+    Returns a DataFrame and registers a temp view 'phone'.
+    """
+
+    n_days_list = [1, 3, 7, 30, 60]
+
+    # Step 1: Create cleaned phone base view
+    session.sql(f"""
+        CREATE OR REPLACE TEMP VIEW phone_base AS
+        SELECT
+            USAA_PARTY_PD_ID,
+            CNTC_PT_VER_GMT_TS,
+            REGEXP_REPLACE(
+                REPLACE(CONCAT(PHONE_AREA_CD, PHONE_NR), '[^0-9]', ''),
+                '^(1)?(\\d{{10}})$', '\\2'
+            ) AS cleaned_phone_number
+        FROM {phone_session_table}
+        WHERE PHONE_NR IS NOT NULL AND TRIM(PHONE_NR) <> ''
+          AND PHONE_AREA_CD IS NOT NULL AND TRIM(PHONE_AREA_CD) <> ''
+    """)
+
+    # Step 2: Generate expressions
+    phone_added_exprs = []
+    shared_member_exprs = []
+
+    for n in n_days_list:
+        phone_added_exprs.append(f"""
+            COUNT(DISTINCT CASE
+                WHEN DATEDIFF('day', b.CNTC_PT_VER_GMT_TS, a.event_ts) <= {n}
+                     AND b.CNTC_PT_VER_GMT_TS < a.event_ts
+                THEN b.cleaned_phone_number
+            END) AS PHONE_ADDED_LAST_{n}_DAYS
+        """)
+
+        shared_member_exprs.append(f"""
+            (
+              SELECT COUNT(DISTINCT p.USAA_PARTY_PD_ID)
+              FROM phone_base p
+              WHERE p.cleaned_phone_number IN (
+                  SELECT b2.cleaned_phone_number
+                  FROM phone_base b2
+                  WHERE b2.USAA_PARTY_PD_ID = a.USAA_PARTY_PD_ID
+                    AND b2.CNTC_PT_VER_GMT_TS < a.event_ts
+                    AND DATEDIFF('day', b2.CNTC_PT_VER_GMT_TS, a.event_ts) <= {n}
+              )
+              AND p.USAA_PARTY_PD_ID != a.USAA_PARTY_PD_ID
+              AND p.CNTC_PT_VER_GMT_TS < a.event_ts
+              AND DATEDIFF('day', p.CNTC_PT_VER_GMT_TS, a.event_ts) <= {n}
+            ) AS NUM_MEMBERS_SHARING_PHONE_LAST_{n}_DAYS
+        """)
+
+    select_exprs = ",\n    ".join(phone_added_exprs + shared_member_exprs)
+
+    # Step 3: Final query
+    final_sql = f"""
+        SELECT
+            a.USAA_PARTY_PD_ID,
+            a.event_ts,
+            COUNT(DISTINCT CASE 
+                WHEN b.CNTC_PT_VER_GMT_TS < a.event_ts 
+                THEN b.cleaned_phone_number 
+            END) AS TOTAL_UNIQUE_PHONE,
+            DATEDIFF(
+                'day',
+                MAX(CASE WHEN b.CNTC_PT_VER_GMT_TS < a.event_ts THEN b.CNTC_PT_VER_GMT_TS END),
+                a.event_ts
+            ) AS DAYS_SINCE_LAST_PHONE_CHANGE,
+            {select_exprs}
+        FROM {base_table} a
+        LEFT JOIN phone_base b
+          ON a.USAA_PARTY_PD_ID = b.USAA_PARTY_PD_ID
+        GROUP BY a.USAA_PARTY_PD_ID, a.event_ts
+    """
+
+    result_df = session.sql(final_sql)
+    result_df.create_or_replace_temp_view("phone")
+    return result_df
+
+phone = create_phone_feature_view(
+    session,
+    base_table="EZ250.BASE_TRAINING_TABLE",
+    phone_session_table="EZ250.FAM_INTERNET_TRAIN_SESSION_2024_11_2025_03"
+)
+
+phone.show()
+
 def create_phone_feature_view(session, base_table: str):
     """
     Generate phone-related features for the input base table and register a temporary view 'phone'.
