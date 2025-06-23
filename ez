@@ -1,3 +1,15 @@
+shared_member_exprs.append(f"""
+    SELECT COUNT(DISTINCT p.PRTY_ID)
+    FROM phone_base p
+    JOIN phone_base b
+      ON p.cleaned_phone_number = b.cleaned_phone_number
+     AND p.PRTY_ID <> b.PRTY_ID
+     AND b.CNTC_PT_VER_GMT_TS < a.event_ts
+     AND DATEDIFF(day, b.CNTC_PT_VER_GMT_TS, a.event_ts) <= {n}
+    WHERE p.PRTY_ID = a.PRTY_ID
+""")
+
+
 def create_phone_feature_view(session, base_table: str, phone_session_table: str):
     """
     Generate phone-related features including counts of new phones and members sharing phones.
