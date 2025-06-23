@@ -1,3 +1,87 @@
+def create_phone_feature_view(session, base_table: str, phone_session_table: str):
+    """
+    Generate phone-related features including counts of new phones and members sharing phones.
+    Returns a DataFrame and registers a temp view 'phone'.
+    """
+    n_days_list = [1, 3, 7, 30, 60]  # You can modify this list as needed
+
+    # Step 1: Create cleaned phone base view
+    phone_base = session.sql(f"""
+        SELECT 
+            PARTY_ID             AS PRTY_ID,
+            CNCT_PT_VER_GMT_TS   AS CNCT_PT_VER_GMT_TS,
+            CASE 
+                WHEN INTL_PHONE_NR IS NOT NULL AND TRIM(INTL_PHONE_NR) <> '' 
+                     THEN REGEXP_REPLACE(INTL_PHONE_NR, '[\\s()\\-]', '')
+                WHEN PHONE_NR IS NOT NULL AND PHONE_AREA_CD IS NOT NULL 
+                     AND TRIM(PHONE_NR) <> '' AND TRIM(PHONE_AREA_CD) <> ''
+                     THEN REGEXP_REPLACE(CONCAT(PHONE_AREA_CD, PHONE_NR), '[\\s()\\-]', '')
+                ELSE NULL 
+            END AS cleaned_phone_number
+        FROM {phone_session_table}
+    """)
+    phone_base.create_or_replace_temp_view("phone_base")
+
+    # Step 2: Dynamically generate SELECT expressions
+    phone_added_exprs = []
+    shared_member_exprs = []
+
+    for n in n_days_list:
+        phone_added_exprs.append(f"""
+            COUNT(DISTINCT CASE 
+                WHEN b.CNCT_PT_VER_GMT_TS < a.event_ts 
+                 AND DATEDIFF('day', b.CNCT_PT_VER_GMT_TS, a.event_ts) <= {n} 
+                THEN b.cleaned_phone_number END
+            ) AS PHONE_ADDED_LAST_{n}_DAYS
+        """)
+
+        shared_member_exprs.append(f"""
+            COUNT(DISTINCT CASE 
+                WHEN b.CNCT_PT_VER_GMT_TS < a.event_ts 
+                 AND c.CNCT_PT_VER_GMT_TS < a.event_ts 
+                 AND DATEDIFF('day', b.CNCT_PT_VER_GMT_TS, a.event_ts) <= {n} 
+                 AND DATEDIFF('day', c.CNCT_PT_VER_GMT_TS, a.event_ts) <= {n} 
+                THEN c.PRTY_ID END
+            ) AS NUM_MEMBERS_SHARING_PHONE_LAST_{n}_DAYS
+        """)
+
+    # Fixed part of SELECT clause
+    static_exprs = """
+        COUNT(DISTINCT b.cleaned_phone_number) AS TOTAL_UNIQUE_PHONE,
+        DATEDIFF('day', 
+            MAX(CASE WHEN b.CNCT_PT_VER_GMT_TS < a.event_ts THEN b.CNCT_PT_VER_GMT_TS END),
+            a.event_ts
+        ) AS DAYS_SINCE_LAST_PHONE_CHANGE
+    """
+
+    # Assemble the full SQL
+    all_exprs = phone_added_exprs + shared_member_exprs + [static_exprs]
+    select_clause = ",\n".join(all_exprs)
+
+    final_sql = f"""
+        SELECT 
+            a.USAA_PARTY_PD_ID,
+            a.event_ts,
+            {select_clause}
+        FROM {base_table} a
+        LEFT JOIN phone_base b
+            ON b.PRTY_ID = a.USAA_PARTY_PD_ID
+           AND b.CNCT_PT_VER_GMT_TS < a.event_ts
+           AND DATEDIFF('day', b.CNCT_PT_VER_GMT_TS, a.event_ts) <= {max(n_days_list)}
+        LEFT JOIN phone_base c
+            ON c.cleaned_phone_number = b.cleaned_phone_number
+           AND c.PRTY_ID <> a.USAA_PARTY_PD_ID
+           AND c.CNCT_PT_VER_GMT_TS < a.event_ts
+           AND DATEDIFF('day', c.CNCT_PT_VER_GMT_TS, a.event_ts) <= {max(n_days_list)}
+        GROUP BY a.USAA_PARTY_PD_ID, a.event_ts
+    """
+
+    # Execute and register temp view
+    result_df = session.sql(final_sql)
+    result_df.create_or_replace_temp_view("phone")
+    return result_df
+
+
 shared_member_exprs.append(f"""
     SELECT COUNT(DISTINCT p.PRTY_ID)
     FROM phone_base p
