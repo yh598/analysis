@@ -1,3 +1,133 @@
+from snowflake.snowpark import functions as F
+
+def create_partitioned_phone_features(session, base_table: str, phone_session_table: str,
+                                      start_date: str, end_date: str):
+    """
+    Create a DataFrame of phone-related features per user and date, partitioning by day to manage memory.
+    The result is also registered as a temporary view named 'phone'.
+    """
+    # Define rolling window sizes (in days)
+    n_days_list = [1, 3, 7, 30, 60]
+    
+    # Prepare the phone session DataFrame with cleaned phone number
+    phone_df = session.table(phone_session_table)
+    # Create a unified phone number string without formatting (digits only)
+    clean_phone_col = F.coalesce(
+        F.regexp_replace(F.col("INTL_PHONE_NR"), "[^0-9]", ""),  # remove non-digits [oai_citation:5‡crunchydata.com](https://www.crunchydata.com/blog/extracting-and-substituting-text-with-regular-expressions-in-postgresql#:~:text=,1212%27%2C%20%27%5CD%27%2C%20%27%27%29%3B%20regexp_replace)
+        F.concat(F.col("PHONE_AREA_CD"), F.col("PHONE_NR"))      # fallback: area code + number
+    ).alias("clean_phone")
+    phone_df = phone_df.select(
+        F.col("PRTY_ID"), 
+        F.col("CNTC_PT_VER_GMT_TS"), 
+        clean_phone_col
+    )
+    
+    # Initialize an empty DataFrame for accumulating results
+    result_df = None
+    
+    # Convert input date strings to Python date objects for iteration
+    from datetime import datetime, timedelta
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+    
+    current_date = start_dt
+    while current_date <= end_dt:
+        day_str = current_date.strftime("%Y-%m-%d")
+        # Filter base table for the current date
+        base_day_df = session.table(base_table).filter(F.col("event_ts") == F.to_date(F.lit(day_str)))
+        
+        # Filter phone data up to (and including) the current date
+        # Using < next day to include all timestamps on 'current_date'
+        phone_up_to_day = phone_df.filter(
+            F.col("CNTC_PT_VER_GMT_TS") < F.dateadd('day', F.lit(1), F.to_date(F.lit(day_str)))
+        )
+        # Identify suspicious phones (>=3 distinct users) up to this date
+        suspicious_phones = phone_up_to_day.group_by("clean_phone").agg(
+            F.count_distinct("PRTY_ID").alias("user_count")
+        ).filter(F.col("user_count") >= 3).select("clean_phone")
+        # Filter phone records to only suspicious phones
+        phone_up_to_day = phone_up_to_day.join(suspicious_phones, on="clean_phone", how="inner")
+        
+        # Left join base (users for the day) with their phone usage (suspicious phones)
+        user_phone_df = base_day_df.join(
+            phone_up_to_day, 
+            on=(base_day_df["USAA_PARTY_PD_ID"] == phone_up_to_day["PRTY_ID"]), 
+            how="left"
+        )
+        # Self-join: link user's phone records to other users' records on the same phone
+        # Rename columns in a copy of phone_up_to_day for the "other" user
+        other_phone_df = phone_up_to_day.select(
+            F.col("clean_phone"), 
+            F.col("PRTY_ID").alias("other_prty_id"), 
+            F.col("CNTC_PT_VER_GMT_TS").alias("other_ts")
+        )
+        # Join user_phone_df to other_phone_df on matching phone, ensuring PRTY_IDs differ
+        combined_df = user_phone_df.join(
+            other_phone_df, 
+            on=(user_phone_df["clean_phone"] == other_phone_df["clean_phone"]) & 
+               (other_phone_df["other_prty_id"] != user_phone_df["USAA_PARTY_PD_ID"]), 
+            how="left"
+        )
+        
+        # Group by user and event date to compute aggregate features
+        group_cols = [combined_df["USAA_PARTY_PD_ID"], combined_df["event_ts"]]
+        agg_expressions = []
+        # Rolling window features for each n in n_days_list
+        for n in n_days_list:
+            window_start = F.dateadd('day', F.lit(- (n - 1)), combined_df["event_ts"])
+            # Count of new phones added in the last n days (distinct clean_phone with user usage in window)
+            new_phone_n = F.count_distinct(
+                F.when(combined_df["CNTC_PT_VER_GMT_TS"] >= window_start, combined_df["clean_phone"])
+            ).alias(f"new_phones_last_{n}_days")
+            # Count of other members sharing phone in last n days (distinct other_prty_id with usage in window)
+            other_member_n = F.count_distinct(
+                F.when(combined_df["other_ts"] >= window_start, combined_df["other_prty_id"])
+            ).alias(f"other_members_last_{n}_days")
+            agg_expressions.extend([new_phone_n, other_member_n])
+        # Total distinct suspicious phones used by the user (lifetime up to event date)
+        total_phones = F.count_distinct(combined_df["clean_phone"]).alias("total_distinct_phones")
+        # Total distinct other members who have ever shared a phone with the user (up to event date)
+        total_others = F.count_distinct(combined_df["other_prty_id"]).alias("total_other_members")
+        agg_expressions.extend([total_phones, total_others])
+        # Aggregate now
+        features_df = combined_df.group_by(*group_cols).agg(*agg_expressions)
+        
+        # Compute days since last phone change:
+        # Determine the last (most recent) "first use" timestamp among the user's phones
+        # First, get the first-use timestamp for each phone (min timestamp per phone per user)
+        first_use_df = phone_up_to_day.group_by("PRTY_ID", "clean_phone").agg(
+            F.min("CNTC_PT_VER_GMT_TS").alias("first_use_ts")
+        )
+        last_change_df = first_use_df.group_by("PRTY_ID").agg(
+            F.max("first_use_ts").alias("last_change_ts")
+        )
+        # Join with features_df to bring in last_change_ts for each user, then calculate date difference
+        features_df = features_df.join(
+            last_change_df, 
+            features_df["USAA_PARTY_PD_ID"] == last_change_df["PRTY_ID"], 
+            how="left"
+        ).select(
+            features_df["USAA_PARTY_PD_ID"],
+            features_df["event_ts"],
+            *[features_df[col] for col in features_df.columns if col not in ("USAA_PARTY_PD_ID", "event_ts")],
+            F.datediff('day', F.col("last_change_ts"), features_df["event_ts"]).alias("days_since_last_phone_change")
+        )
+        
+        # Accumulate the results via UNION ALL
+        if result_df is None:
+            result_df = features_df
+        else:
+            # Use union_all_by_name to include all rows without dropping duplicates [oai_citation:6‡docs.snowflake.com](https://docs.snowflake.com/en/developer-guide/snowpark/reference/python/latest/snowpark/api/snowflake.snowpark.DataFrame.union_all_by_name#:~:text=Returns%20a%20new%20DataFrame%20that,including%20any%20duplicate%20rows)
+            result_df = result_df.union_all_by_name(features_df)
+        
+        # Move to the next date
+        current_date += timedelta(days=1)
+    
+    # Register the final DataFrame as a temporary view "phone" for further SQL use
+    result_df.create_or_replace_temp_view("phone")
+    return result_df
+
+
 from datetime import datetime, timedelta
 
 # Define the parameters
