@@ -1,4 +1,76 @@
 from datetime import datetime, timedelta
+import pandas as pd
+
+# Function to generate SQL per partition date
+def generate_partitioned_phone_feature_sql(base_table: str, phone_session_table: str, partition_date: str, n_days_list: list) -> str:
+    date_obj = datetime.strptime(partition_date, '%Y-%m-%d')
+    start_ts = (date_obj - timedelta(days=max(n_days_list))).strftime('%Y-%m-%d')
+    end_ts = partition_date
+
+    feature_exprs = []
+    for n in n_days_list:
+        feature_exprs.append(f"""
+            COUNT(DISTINCT CASE
+                WHEN DATEDIFF('day', pb.phone_event_ts, base.event_ts) BETWEEN 0 AND {n}
+                THEN pb.cleaned_phone_number
+            END) AS PHONE_ADDED_LAST_{n}_DAYS
+        """)
+        feature_exprs.append(f"""
+            COUNT(DISTINCT CASE
+                WHEN DATEDIFF('day', pb.phone_event_ts, base.event_ts) BETWEEN 0 AND {n}
+                     AND pb.PRTY_ID != base.PRTY_ID
+                THEN pb.PRTY_ID
+            END) AS NUM_OTHER_MEMBERS_SHARING_PHONE_LAST_{n}_DAYS
+        """)
+
+    feature_expr_sql = ",\n".join(feature_exprs)
+
+    sql = f"""
+    WITH phone_base AS (
+        SELECT
+            PRTY_ID,
+            CNCT_PT_VER_GMT_TS AS phone_event_ts,
+            CASE
+                WHEN INTL_PHONE_NR IS NOT NULL AND TRIM(INTL_PHONE_NR) <> ''
+                    THEN REGEXP_REPLACE(INTL_PHONE_NR, '[^\\d]', '')
+                WHEN PHONE_NR IS NOT NULL AND PHONE_AREA_CD IS NOT NULL
+                    THEN REGEXP_REPLACE(CONCAT(PHONE_AREA_CD, PHONE_NR), '[^\\d]', '')
+                ELSE NULL
+            END AS cleaned_phone_number
+        FROM {phone_session_table}
+        WHERE CNCT_PT_VER_GMT_TS BETWEEN '{start_ts}' AND '{end_ts}'
+    ),
+    shared_phone_list AS (
+        SELECT cleaned_phone_number
+        FROM phone_base
+        GROUP BY cleaned_phone_number
+        HAVING COUNT(DISTINCT PRTY_ID) >= 3
+    ),
+    base AS (
+        SELECT *
+        FROM {base_table}
+        WHERE event_ts = '{partition_date}'
+    )
+    SELECT
+        base.PRTY_ID AS USAA_PARTY_PD_ID,
+        base.event_ts,
+        {feature_expr_sql}
+    FROM base
+    LEFT JOIN phone_base pb
+        ON base.event_ts >= pb.phone_event_ts
+        AND base.event_ts <= DATEADD(day, {max(n_days_list)}, pb.phone_event_ts)
+        AND pb.cleaned_phone_number IN (SELECT cleaned_phone_number FROM shared_phone_list)
+    GROUP BY base.PRTY_ID, base.event_ts
+    """
+    return sql
+
+# Display usage for user reference
+import ace_tools as tools; tools.display_dataframe_to_user(name="Partitioned SQL Generator", dataframe=pd.DataFrame([{
+    "How to Use": "Call generate_partitioned_phone_feature_sql(base_table, phone_session_table, partition_date, n_days_list) to get SQL string"
+}]))
+
+
+from datetime import datetime, timedelta
 
 def create_partitioned_phone_features(session, base_table: str, phone_session_table: str, start_date: str, end_date: str) -> 'DataFrame':
     n_days_list = [1, 3, 7, 30, 60]
