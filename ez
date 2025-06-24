@@ -1,3 +1,17 @@
+# Step 3: Filter to phone numbers in base_phone_list used by ≥3 distinct members
+shared_phone_filter_sql = f"""
+    CREATE OR REPLACE TEMPORARY VIEW shared_phones_only AS
+    SELECT
+        pb.cleaned_phone_number
+    FROM phone_base pb
+    JOIN base_phone_list bp
+      ON pb.cleaned_phone_number = bp.phone_number
+    GROUP BY pb.cleaned_phone_number
+    HAVING COUNT(DISTINCT pb.PRTY_ID) >= 3
+"""
+session.sql(shared_phone_filter_sql).collect()
+
+
 def create_phone_feature_view(session, base_table: str, phone_session_table: str) -> 'DataFrame':
     """
     Creates phone-based fraud features with dynamic rolling windows.
