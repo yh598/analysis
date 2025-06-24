@@ -1,3 +1,31 @@
+final_sql = f"""
+SELECT *
+FROM (
+    SELECT
+        a.USAA_PARTY_PD_ID,
+        a.event_ts,
+        COUNT(DISTINCT bp.cleaned_phone_number) AS TOTAL_UNIQUE_PHONE,
+        DATEDIFF('day', MAX(CASE 
+            WHEN bp.base_event_ts < a.event_ts THEN bp.base_event_ts 
+            ELSE NULL 
+        END), a.event_ts) AS DAYS_SINCE_LAST_PHONE_CHANGE,
+        {','.join(feature_exprs)},
+        ROW_NUMBER() OVER (PARTITION BY a.USAA_PARTY_PD_ID, a.event_ts ORDER BY bp.base_event_ts DESC) AS rn
+    FROM {base_table} a
+    LEFT JOIN base_phone_list_{partition_date.replace('-', '_')} bp
+        ON bp.base_party_id = a.USAA_PARTY_PD_ID
+        AND bp.base_event_ts <= a.event_ts
+    LEFT JOIN shared_phone_usage_{partition_date.replace('-', '_')} spu
+        ON bp.cleaned_phone_number = spu.cleaned_phone_number
+        AND bp.base_party_id = spu.base_party_id
+        AND bp.base_event_ts = spu.base_event_ts
+    GROUP BY a.USAA_PARTY_PD_ID, a.event_ts, bp.base_event_ts
+) tmp
+WHERE rn = 1
+"""
+
+
+
 from datetime import datetime, timedelta
 
 def create_partitioned_phone_features(session, base_table: str, phone_session_table: str, start_date: str, end_date: str):
