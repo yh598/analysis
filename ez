@@ -1,3 +1,55 @@
+all_queries = []
+
+for partition_date in partition_dates:
+    query = f"""
+    SELECT
+        a.USAA_PARTY_PD_ID,
+        a.event_ts,
+        bp.cleaned_phone_number,
+        bp.base_event_ts,
+        {','.join(feature_exprs)}
+    FROM {base_table} a
+    LEFT JOIN base_phone_list_{partition_date.replace('-', '_')} bp
+        ON bp.base_party_id = a.USAA_PARTY_PD_ID AND bp.base_event_ts <= a.event_ts
+    LEFT JOIN shared_phone_usage_{partition_date.replace('-', '_')} spu
+        ON bp.cleaned_phone_number = spu.cleaned_phone_number
+        AND bp.base_party_id = spu.base_party_id
+        AND bp.base_event_ts = spu.base_event_ts
+    """
+    all_queries.append(query)
+
+union_sql = "UNION ALL\n".join(all_queries)
+
+final_sql = f"""
+WITH unioned_data AS (
+    {union_sql}
+),
+ranked_data AS (
+    SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY USAA_PARTY_PD_ID, event_ts
+               ORDER BY base_event_ts DESC
+           ) AS rn
+    FROM unioned_data
+)
+SELECT
+    USAA_PARTY_PD_ID,
+    event_ts,
+    COUNT(DISTINCT cleaned_phone_number) AS TOTAL_UNIQUE_PHONE,
+    DATEDIFF('day', MAX(CASE WHEN base_event_ts < event_ts THEN base_event_ts ELSE NULL END), event_ts) AS DAYS_SINCE_LAST_PHONE_CHANGE,
+    {','.join(feature_exprs)}
+FROM ranked_data
+WHERE rn = 1
+GROUP BY USAA_PARTY_PD_ID, event_ts
+"""
+
+final_df = session.sql(final_sql)
+final_df.create_or_replace_temp_view("phone")
+return final_df
+
+
+
+
 final_sql = f"""
 WITH joined_phone_data AS (
     SELECT
