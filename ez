@@ -4,6 +4,30 @@ top_shared_emails = session.sql("""
         COUNT(DISTINCT base_party_id) AS user_count
     FROM base
     WHERE 
+        REGEXP_LIKE(CUST_EMAIL_ADDR_TXT, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')
+        AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%none%'
+        AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%n/a%'
+        AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%refused%'
+        AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%declined%'
+        AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%usaa%'
+        AND NOT (
+            LOWER(CUST_EMAIL_ADDR_TXT) LIKE '%no%' AND
+            LOWER(CUST_EMAIL_ADDR_TXT) LIKE '%email%'
+        )
+    GROUP BY CUST_EMAIL_ADDR_TXT
+    ORDER BY user_count DESC
+    LIMIT 20
+""")
+
+top_shared_emails.show()
+
+
+top_shared_emails = session.sql("""
+    SELECT 
+        CUST_EMAIL_ADDR_TXT,
+        COUNT(DISTINCT base_party_id) AS user_count
+    FROM base
+    WHERE 
         REGEXP_LIKE(CUST_EMAIL_ADDR_TXT, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$') AND
         LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%none%' AND
         LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%n/a%' AND
