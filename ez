@@ -1,3 +1,19 @@
+from snowflake.snowpark.functions import col, to_timestamp
+
+# Attempt to parse EVENT_TS into a timestamp
+df_with_parsed = df.with_column("parsed_ts", to_timestamp(col("EVENT_TS")))
+
+# Malformed = non-null EVENT_TS that failed to parse
+malformed_df = df_with_parsed.filter((col("parsed_ts").is_null()) & (col("EVENT_TS").is_not_null()))
+
+# Count malformed and total
+malformed_count = malformed_df.count()
+total_count = df.count()
+malformed_ratio = malformed_count / total_count if total_count else 0
+
+print(f"Malformed EVENT_TS ratio: {malformed_ratio:.2%} ({malformed_count} out of {total_count})")
+
+
 from snowflake.snowpark.functions import expr
 
 # Define regex pattern for valid timestamps (e.g., 'YYYY-MM-DD HH:MM:SS')
