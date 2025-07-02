@@ -1,3 +1,17 @@
+top_shared_emails = session.sql("""
+    SELECT 
+        CUST_EMAIL_ADDR_TXT,
+        COUNT(DISTINCT base_party_id) AS user_count
+    FROM base
+    GROUP BY CUST_EMAIL_ADDR_TXT
+    HAVING COUNT(DISTINCT base_party_id) > 1
+    ORDER BY user_count DESC
+    LIMIT 20
+""")
+
+top_shared_emails.show()
+
+
 malformed_df = df.filter(expr(f"regexp_like(EVENT_TS, '{uuid_pattern}')"))
 malformed_df.select("EVENT_TS").show(10)
 
