@@ -1,3 +1,19 @@
+from snowflake.snowpark.functions import expr
+
+# Define regex pattern for valid timestamps (e.g., 'YYYY-MM-DD HH:MM:SS')
+timestamp_pattern = r'^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$'
+
+# Use SQL expression to detect malformed EVENT_TS
+malformed_df = df.filter(~expr(f"regexp_like(EVENT_TS, '{timestamp_pattern}')"))
+
+# Count malformed and total rows
+malformed_count = malformed_df.count()
+total_count = df.count()
+malformed_ratio = malformed_count / total_count if total_count else 0
+
+print(f"Malformed EVENT_TS ratio: {malformed_ratio:.2%} ({malformed_count} out of {total_count})")
+
+
 from snowflake.snowpark.functions import col, to_timestamp, regexp_like
 
 # Define regex pattern for valid timestamps (adjust as needed)
