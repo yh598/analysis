@@ -1,3 +1,18 @@
+from snowflake.snowpark.functions import expr
+
+# Regex pattern to match UUID-like strings (e.g., 'B4D65A81-BF67-4AD5-A04F-D9F80B3DFE13')
+uuid_pattern = r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+
+# Filter out rows where EVENT_TS matches the UUID pattern
+clean_df = df.filter(~expr(f"regexp_like(EVENT_TS, '{uuid_pattern}')"))
+
+# Count remaining valid rows
+valid_count = clean_df.count()
+total_count = df.count()
+filtered_out = total_count - valid_count
+print(f"Filtered out {filtered_out} malformed UUID-like EVENT_TS rows. Kept {valid_count} of {total_count}.")
+
+
 from snowflake.snowpark.functions import col, to_timestamp
 
 # Attempt to parse EVENT_TS into a timestamp
