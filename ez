@@ -1,3 +1,28 @@
+base = session.sql("""
+    SELECT
+        PRTY_ID AS base_party_id,
+        DOMS_ADDR_START_EFF_GMT_TS AS base_event_ts,
+        REPLACE(
+            CONCAT_WS(' ',
+                COALESCE(DOMS_DLVR_ADDR_LINE_1_TXT, ''),
+                COALESCE(DOMS_DLVR_ADDR_LINE_2_TXT, ''),
+                COALESCE(DOMS_DLVR_ADDR_LINE_3_TXT, ''),
+                COALESCE(DOMS_CITY_NM, ''),
+                COALESCE(DOMS_CTRY_SBDIV_CD, ''),
+                COALESCE(DOMS_PSTL_AREA_CD, '')
+            ),
+            '.', ''
+        ) AS COMPLETE_ADDRESS
+    FROM PBKGPDMDB_APP_ENT_MBRHUB_CFCR.SV_DOMS_ADDR_EVENT
+    WHERE DOMS_ADDR_START_EFF_GMT_TS = '2025-03-31'
+      AND DOMS_DLVR_ADDR_LINE_1_TXT IS NOT NULL AND DOMS_DLVR_ADDR_LINE_1_TXT <> ''
+      AND DOMS_DLVR_ADDR_LINE_2_TXT IS NOT NULL AND DOMS_DLVR_ADDR_LINE_2_TXT <> ''
+      AND DOMS_DLVR_ADDR_LINE_3_TXT IS NOT NULL AND DOMS_DLVR_ADDR_LINE_3_TXT <> ''
+      AND DOMS_CITY_NM IS NOT NULL AND DOMS_CITY_NM <> ''
+      AND DOMS_CTRY_SBDIV_CD IS NOT NULL AND DOMS_CTRY_SBDIV_CD <> ''
+      AND DOMS_PSTL_AREA_CD IS NOT NULL AND DOMS_PSTL_AREA_CD <> ''
+""")
+
 top_shared_emails = session.sql("""
     SELECT 
         CUST_EMAIL_ADDR_TXT,
