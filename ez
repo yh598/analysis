@@ -1,3 +1,20 @@
+# Register top10 as temp view
+top10_addresses.create_or_replace_temp_view("top10_addresses")
+
+# Filter out the top 10 addresses
+filtered_base = session.sql("""
+    SELECT *
+    FROM base
+    WHERE COMPLETE_ADDRESS NOT IN (
+        SELECT COMPLETE_ADDRESS FROM top10_addresses
+    )
+""")
+
+
+
+filtered_base.create_or_replace_temp_view("base_filtered")
+
+
 base = session.sql("""
     SELECT
         PRTY_ID AS base_party_id,
