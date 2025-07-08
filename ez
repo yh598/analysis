@@ -1,3 +1,7 @@
+s.SESSION_CREATE_TS < s.EVENT_TS
+AND TIMESTAMPDIFF(DAY, s.SESSION_CREATE_TS, s.EVENT_TS) <= 60
+
+
 def ip_features(session_table: str, base_table: str):
     """
     Generate IP-related features for events in the given date range using session and base tables.
