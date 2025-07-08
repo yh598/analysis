@@ -1,3 +1,209 @@
+def ip_features(session_table: str, base_table: str):
+    """
+    Generate IP-related features for events in the given date range using session and base tables.
+    This function computes features including:
+    - shared IP usage (IP addresses used by multiple parties),
+    - time lapse since last session (hours),
+    - distance between last session and current session locations (miles),
+    - travel speed (mph) between last session and current session,
+    - impossible travel flag (if travel speed suggests unrealistic movement).
+    The computation iterates over each day from 2024-11-01 to 2025-03-31 and aggregates results.
+
+    Parameters:
+    session_table (str): Name of the session table (with session records including timestamps and IPs).
+    base_table (str): Name of the base table containing events (with event timestamp and user ID, partitioned by date).
+
+    Returns:
+    DataFrame: Spark DataFrame with one row per event in the date range and the computed features.
+    """
+    from datetime import datetime, timedelta
+
+    # Define the date range
+    start_date = datetime(2024, 11, 1)
+    end_date = datetime(2025, 3, 31)
+
+    final_df = None
+
+    # Loop through each date in the range
+    current_date = start_date
+    while current_date <= end_date:
+        date_str = current_date.strftime('%Y-%m-%d')
+
+        # 1. Identify target users (parties) who have events on the current date
+        target_users_df = spark.sql(f"""
+            SELECT DISTINCT USAA_PARTY_PD_ID AS base_party_id
+            FROM {base_table}
+            WHERE PARTITION_DT = '{date_str}'
+        """)
+        target_users_df.createOrReplaceTempView("target_users")
+
+        # 2. Gather session records for those users within 60 days prior to the event timestamp
+        #    (sessions where session start < event time AND session start >= event time - 60 days)
+        base_df = spark.sql(f"""
+            SELECT
+                s.USAA_PARTY_PD_ID AS base_party_id,
+                b.EVENT_TS,
+                b.PARTITION_DT,
+                s.SESSION_CREATE_TS AS base_event_ts,
+                s.IP_ADDRESS_TXT,
+                TRY_CAST(s.GPS_X_COORD_TXT AS DOUBLE) AS LAT,
+                TRY_CAST(s.GPS_Y_COORD_TXT AS DOUBLE) AS LNG,
+                LAG(s.SESSION_CREATE_TS) OVER (
+                    PARTITION BY s.USAA_PARTY_PD_ID 
+                    ORDER BY s.SESSION_CREATE_TS
+                ) AS prev_session_ts,
+                LAG(s.IP_ADDRESS_TXT) OVER (
+                    PARTITION BY s.USAA_PARTY_PD_ID 
+                    ORDER BY s.SESSION_CREATE_TS
+                ) AS prev_ip,
+                LAG(TRY_CAST(s.GPS_X_COORD_TXT AS DOUBLE)) OVER (
+                    PARTITION BY s.USAA_PARTY_PD_ID 
+                    ORDER BY s.SESSION_CREATE_TS
+                ) AS prev_lat,
+                LAG(TRY_CAST(s.GPS_Y_COORD_TXT AS DOUBLE)) OVER (
+                    PARTITION BY s.USAA_PARTY_PD_ID 
+                    ORDER BY s.SESSION_CREATE_TS
+                ) AS prev_lng
+            FROM {session_table} s
+            JOIN target_users t
+              ON s.USAA_PARTY_PD_ID = t.base_party_id
+            JOIN {base_table} b
+              ON b.USAA_PARTY_PD_ID = t.base_party_id AND b.PARTITION_DT = '{date_str}'
+            WHERE s.STATE_CD <> 'None'
+              AND s.IP_ADDRESS_TXT <> '0.0.0.0'
+              AND s.SESSION_CREATE_TS < b.EVENT_TS
+              AND s.SESSION_CREATE_TS >= DATE_SUB(b.EVENT_TS, 60)
+        """)
+        base_df.createOrReplaceTempView("base")
+
+        # 3. Determine IP addresses shared by 2 or more distinct users in this base dataset
+        shared_df = spark.sql("""
+            SELECT IP_ADDRESS_TXT
+            FROM base
+            GROUP BY IP_ADDRESS_TXT
+            HAVING COUNT(DISTINCT base_party_id) >= 2
+        """)
+        shared_df.createOrReplaceTempView("shared")
+
+        # 4. Find other users ("other_party") who have used the same IP address as a base event
+        #    (join on shared IPs and ensure other user's session is within 60 days before the base event)
+        shared_join_df = spark.sql(f"""
+            SELECT
+                bp.base_party_id,
+                bp.base_event_ts,
+                bp.IP_ADDRESS_TXT,
+                pb.USAA_PARTY_PD_ID AS other_party_id,
+                pb.SESSION_CREATE_TS AS other_event_ts
+            FROM base bp
+            JOIN shared sh
+              ON bp.IP_ADDRESS_TXT = sh.IP_ADDRESS_TXT
+            JOIN {session_table} pb
+              ON pb.IP_ADDRESS_TXT = bp.IP_ADDRESS_TXT
+             AND pb.USAA_PARTY_PD_ID <> bp.base_party_id
+             AND pb.SESSION_CREATE_TS <= bp.base_event_ts
+             AND pb.SESSION_CREATE_TS >= DATE_SUB(bp.base_event_ts, 60)
+             AND pb.SESSION_CREATE_TS >= '{start_date.strftime('%Y-%m-%d')}'
+        """)
+        shared_join_df.createOrReplaceTempView("shared_join")
+
+        # 5. Deduplicate shared IP pairs so each base event & other-party combination appears once
+        joined_df = spark.sql("""
+            SELECT base_party_id, other_party_id, IP_ADDRESS_TXT, base_event_ts
+            FROM shared_join
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY base_party_id, other_party_id, IP_ADDRESS_TXT
+                ORDER BY base_event_ts DESC
+            ) = 1
+        """)
+        joined_df.createOrReplaceTempView("joined")
+
+        # 6. Combine previous session info and shared IP info for each base event
+        unioned1_df = spark.sql(f"""
+            SELECT
+                a.USAA_PARTY_PD_ID,
+                a.EVENT_TS,
+                a.PARTITION_DT,
+                bp.IP_ADDRESS_TXT,
+                bp.base_event_ts,
+                bp.prev_session_ts,
+                bp.prev_ip,
+                bp.LAT,
+                bp.LNG,
+                bp.prev_lat,
+                bp.prev_lng,
+                -- Time since last session (hours)
+                TIMESTAMPDIFF(second, bp.prev_session_ts, bp.base_event_ts) / 3600.0 AS TIME_LAPSE_HOURS,
+                -- Distance from last session location (miles) using haversine formula
+                3958.8 * 2 * ASIN(SQRT(
+                    POWER(SIN(RADIANS(bp.LAT - bp.prev_lat) / 2), 2)
+                    + COS(RADIANS(bp.LAT)) * COS(RADIANS(bp.prev_lat))
+                    * POWER(SIN(RADIANS(bp.LNG - bp.prev_lng) / 2), 2)
+                )) AS DISTANCE_MILES,
+                -- Flag if IP address changed since last session
+                CASE
+                    WHEN bp.prev_ip IS NOT NULL AND bp.IP_ADDRESS_TXT <> bp.prev_ip 
+                    THEN 1 ELSE 0
+                END AS IP_CHANGE_FLAG
+            FROM {base_table} a
+            LEFT JOIN base bp
+              ON bp.base_party_id = a.USAA_PARTY_PD_ID AND bp.base_event_ts = a.EVENT_TS
+            WHERE a.PARTITION_DT = '{date_str}' AND a.IP_ADDRESS_TXT IS NOT NULL
+        """)
+        unioned1_df.createOrReplaceTempView("unioned1")
+
+        # Attach other_party_id to each event (if the IP was shared)
+        unioned_df = spark.sql("""
+            SELECT u1.*, j.other_party_id
+            FROM unioned1 u1
+            LEFT JOIN joined j
+              ON u1.USAA_PARTY_PD_ID = j.base_party_id
+             AND u1.base_event_ts = j.base_event_ts
+             AND u1.IP_ADDRESS_TXT = j.IP_ADDRESS_TXT
+        """)
+        unioned_df.createOrReplaceTempView("unioned")
+
+        # 7. Aggregate features for the current date's events
+        final_day_df = spark.sql("""
+            SELECT
+                USAA_PARTY_PD_ID,
+                EVENT_TS,
+                PARTITION_DT,
+                TIME_LAPSE_HOURS AS TIME_LAPSE_HOURS_SINCE_LAST_SESSION,
+                DISTANCE_MILES AS DISTANCE_MILES_FROM_LAST_SESSION,
+                IP_CHANGE_FLAG,
+                CASE 
+                    WHEN TIME_LAPSE_HOURS > 0 
+                    THEN DISTANCE_MILES / TIME_LAPSE_HOURS 
+                    ELSE NULL 
+                END AS TRAVEL_SPEED_MPH,
+                CASE 
+                    WHEN DISTANCE_MILES > 100 AND TIME_LAPSE_HOURS < 1 
+                    THEN 1 ELSE 0 
+                END AS IMPOSSIBLE_TRAVEL_FLAG,
+                COUNT(DISTINCT IP_ADDRESS_TXT) AS TOTAL_UNIQUE_IP,
+                COUNT(DISTINCT other_party_id) AS TOTAL_OTHER_MEMBERS_SHARING_IP,
+                CASE 
+                    WHEN COUNT(DISTINCT other_party_id) > 0 
+                    THEN 1 ELSE 0 
+                END AS SHARED_IP_FLAG
+            FROM unioned
+            GROUP BY 
+                USAA_PARTY_PD_ID, EVENT_TS, PARTITION_DT,
+                TIME_LAPSE_HOURS, DISTANCE_MILES, IP_CHANGE_FLAG
+        """)
+
+        # Accumulate the result for this date
+        if final_df is None:
+            final_df = final_day_df
+        else:
+            final_df = final_df.unionByName(final_day_df, allowMissingColumns=False)
+
+        # Move to the next date
+        current_date += timedelta(days=1)
+
+    return final_df
+
+
 # Register top10 as temp view
 top10_addresses.create_or_replace_temp_view("top10_addresses")
 
