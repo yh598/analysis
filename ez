@@ -1,3 +1,58 @@
+columns_to_drop = [
+    # Phone features
+    'TOTAL_UNIQUE_PHONE',
+    'DAYS_SINCE_LAST_PHONE_CHANGE',
+    'PHONE_ADDED_LAST_1_DAY',
+    'PHONE_ADDED_LAST_3_DAYS',
+    'PHONE_ADDED_LAST_7_DAYS',
+    'PHONE_ADDED_LAST_30_DAYS',
+    'PHONE_ADDED_LAST_60_DAYS',
+
+    # Email features
+    'TOTAL_UNIQUE_EMAIL',
+    'DAYS_SINCE_LAST_EMAIL_CHANGE',
+    'EMAIL_ADDED_LAST_1_DAY',
+    'EMAIL_ADDED_LAST_3_DAYS',
+    'EMAIL_ADDED_LAST_7_DAYS',
+    'EMAIL_ADDED_LAST_30_DAYS',
+    'EMAIL_ADDED_LAST_60_DAYS',
+
+    # Address features
+    'TOTAL_UNIQUE_ADDRESS',
+    'DAYS_SINCE_LAST_ADDRESS_CHANGE',
+    'ADDRESS_ADDED_LAST_1_DAY',
+    'ADDRESS_ADDED_LAST_3_DAYS',
+    'ADDRESS_ADDED_LAST_7_DAYS',
+    'ADDRESS_ADDED_LAST_30_DAYS',
+    'ADDRESS_ADDED_LAST_60_DAYS',
+
+    # IP features
+    'TOTAL_UNIQUE_IP',
+    'DAYS_SINCE_LAST_IP_CHANGE',
+    'IP_ADDED_LAST_1_DAY',
+    'IP_ADDED_LAST_3_DAYS',
+    'IP_ADDED_LAST_7_DAYS',
+    'IP_ADDED_LAST_30_DAYS',
+    'IP_ADDED_LAST_60_DAYS',
+    'TIME_LAPSE_SINCE_LAST_SESSION',
+    'DISTANCE_FROM_LAST_SESSION',
+    'IP_CHANGE_FLAG',
+    'IMPOSSIBLE_TRAVEL_FLAG',
+
+    # CAP features
+    'CAP_ID_CNT',
+    'CAP_30_CNT',
+    'CAP_7_CNT',
+    'CAP_300_CNT',
+    'CAP_60D_CNT',
+    'CAP_TOTAL_CNT',
+    'RECENT_CAPPED',
+    'DAYS_SINCE_LAST_CAP'
+]
+
+df = df.drop(columns=columns_to_drop, errors='ignore')
+
+
 from datetime import datetime, timedelta
 
 def ip_features(segment: str, base_table: str, session_table: str):
