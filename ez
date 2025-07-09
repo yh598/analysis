@@ -1,3 +1,84 @@
+from snowflake.snowpark import Session
+
+def remove_columns(session: Session, segment: str, columns_to_drop: list):
+    """
+    Load DESTRO_{segment}_TRAIN_FRAUD_FEATURES_W_AUTH and drop specified columns.
+    Saves result as TEMP VIEW: df_{segment.lower()}_cleaned
+    """
+    database = session.get_current_database().replace('"', '')
+    schema = session.get_current_schema().replace('"', '')
+
+    input_table = f"{database}.{schema}.DESTRO_{segment.upper()}_TRAIN_FRAUD_FEATURES_W_AUTH"
+    df = session.table(input_table)
+
+    df_cleaned = df.drop(*columns_to_drop)
+
+    # Create temp view for reuse in next step
+    view_name = f"df_{segment.lower()}_cleaned"
+    df_cleaned.create_or_replace_temp_view(view_name)
+
+    print(f"✅ Removed columns and created temp view: {view_name}")
+
+def merge_features(session: Session, segment: str):
+    """
+    Merge previously cleaned df_{segment}_cleaned with phone, email, address, cap feature tables.
+    Writes result to DESTRO_{segment}_TRAIN_EVENT_AUTH.
+    """
+    database = session.get_current_database().replace('"', '')
+    schema = session.get_current_schema().replace('"', '')
+
+    # Use the cleaned temp view from part 1
+    base_df = session.table(f"df_{segment.lower()}_cleaned").alias("a")
+
+    # Join tables - keep INTERNET fixed per current design
+    df_phone   = session.table(f"{database}.{schema}.DESTRO_INTERNET_PHONE_EVENT_FEATURE").alias("b")
+    df_email   = session.table(f"{database}.{schema}.DESTRO_INTERNET_EMAIL_EVENT_FEATURE").alias("c")
+    df_address = session.table(f"{database}.{schema}.DESTRO_INTERNET_ADDRESS_EVENT_FEATURE").alias("d")
+    df_cap     = session.table(f"{database}.{schema}.DESTRO_INTERNET_CAP_EVENT_FEATURE").alias("f")
+
+    # Perform left joins
+    df_joined = (
+        base_df
+        .join(df_phone,   (base_df["USAA_PARTY_PD_ID"] == df_phone["USAA_PARTY_PD_ID"]) & 
+                          (base_df["EVENT_TS"] == df_phone["EVENT_TS"]), how="left")
+        .join(df_email,   (base_df["USAA_PARTY_PD_ID"] == df_email["USAA_PARTY_PD_ID"]) & 
+                          (base_df["EVENT_TS"] == df_email["EVENT_TS"]), how="left")
+        .join(df_address, (base_df["USAA_PARTY_PD_ID"] == df_address["USAA_PARTY_PD_ID"]) & 
+                          (base_df["EVENT_TS"] == df_address["EVENT_TS"]), how="left")
+        .join(df_cap,     (base_df["USAA_PARTY_PD_ID"] == df_cap["USAA_PARTY_PD_ID"]) & 
+                          (base_df["EVENT_TS"] == df_cap["EVENT_TS"]), how="left")
+    )
+
+    # Save to final output table
+    output_table = f"{database}.{schema}.DESTRO_{segment.upper()}_TRAIN_EVENT_AUTH"
+    df_joined.write.save_as_table(output_table, mode="overwrite")
+
+    print(f"✅ Final merged table written to: {output_table}")
+
+columns_to_drop = [
+    'TOTAL_UNIQUE_PHONE', 'DAYS_SINCE_LAST_PHONE_CHANGE', 'PHONE_ADDED_LAST_1_DAY',
+    'PHONE_ADDED_LAST_3_DAYS', 'PHONE_ADDED_LAST_7_DAYS', 'PHONE_ADDED_LAST_30_DAYS',
+    'PHONE_ADDED_LAST_60_DAYS', 'TOTAL_UNIQUE_EMAIL', 'DAYS_SINCE_LAST_EMAIL_CHANGE',
+    'EMAIL_ADDED_LAST_1_DAY', 'EMAIL_ADDED_LAST_3_DAYS', 'EMAIL_ADDED_LAST_7_DAYS',
+    'EMAIL_ADDED_LAST_30_DAYS', 'EMAIL_ADDED_LAST_60_DAYS', 'TOTAL_UNIQUE_ADDRESS',
+    'DAYS_SINCE_LAST_ADDRESS_CHANGE', 'ADDRESS_ADDED_LAST_1_DAY', 'ADDRESS_ADDED_LAST_3_DAYS',
+    'ADDRESS_ADDED_LAST_7_DAYS', 'ADDRESS_ADDED_LAST_30_DAYS', 'ADDRESS_ADDED_LAST_60_DAYS',
+    'TOTAL_UNIQUE_IP', 'DAYS_SINCE_LAST_IP_CHANGE', 'IP_ADDED_LAST_1_DAY',
+    'IP_ADDED_LAST_3_DAYS', 'IP_ADDED_LAST_7_DAYS', 'IP_ADDED_LAST_30_DAYS',
+    'IP_ADDED_LAST_60_DAYS', 'TIME_LAPSE_SINCE_LAST_SESSION', 'DISTANCE_FROM_LAST_SESSION',
+    'IP_CHANGE_FLAG', 'IMPOSSIBLE_TRAVEL_FLAG', 'CAP_ID_CNT', 'CAP_30_CNT',
+    'CAP_7_CNT', 'CAP_300_CNT', 'CAP_60D_CNT', 'CAP_TOTAL_CNT', 'RECENT_CAPPED',
+    'DAYS_SINCE_LAST_CAP'
+]
+
+# Step 1: remove columns and create temp view
+remove_columns(session, 'internet', columns_to_drop)
+
+# Step 2: join features and save to output
+merge_features(session, 'internet')
+
+
+
 columns_to_drop = [
     # Phone features
     'TOTAL_UNIQUE_PHONE',
