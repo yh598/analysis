@@ -1,6 +1,59 @@
 tables = ['destt01', 'desti01', 'desta01']
 versions = ['v1']
 
+def get_thresholds(table_full):
+    qry_q1 = f"""
+    SELECT
+        partition_dt,
+        COUNT(DISTINCT usaa_party_pd_id, alert_ts) as CNT_score_sys
+    FROM
+        {table_full}
+    WHERE
+        partition_dt >= '2025-01-01' AND partition_dt <= '2025-03-31'
+    GROUP BY
+        partition_dt
+    """
+    df_q1 = run_hive_qry(qry_q1)
+    mu = df_q1['cnt_score_sys'].mean()
+    sigma = df_q1['cnt_score_sys'].std()
+    return mu, sigma
+
+def apply_threshold_to_may(table_full, mu, sigma):
+    qry_may = f"""
+    SELECT
+        partition_dt,
+        COUNT(DISTINCT usaa_party_pd_id, alert_ts) as CNT_score_sys
+    FROM
+        {table_full}
+    WHERE
+        partition_dt >= '2025-05-01' AND partition_dt <= '2025-05-31'
+    GROUP BY
+        partition_dt
+    ORDER BY
+        partition_dt ASC
+    """
+    df_may = run_hive_qry(qry_may)
+
+    upper = mu + 2 * sigma
+    lower = mu - 2 * sigma
+
+    df_may['volume_outlier'] = df_may['cnt_score_sys'].apply(
+        lambda x: 'outlier' if x > upper or x < lower else 'normal'
+    )
+
+    print(f"\n== Volume Outlier Alert on May Data using Q1 Thresholds: {table_full} ==")
+    print(f"Threshold: {lower:.1f} - {upper:.1f}")
+    print(df_may[['partition_dt', 'cnt_score_sys', 'volume_outlier']])
+
+for t in tables:
+    for v in versions:
+        table_full = f"view_mv_scr2tgt_{t}_{v}_71_v1"
+        mu, sigma = get_thresholds(table_full)
+        apply_threshold_to_may(table_full, mu, sigma)
+
+tables = ['destt01', 'desti01', 'desta01']
+versions = ['v1']
+
 def run_analysis_for(table_name, version):
     table_full = f"view_mv_scr2tgt_{table_name}_{version}_71_v1"
     
