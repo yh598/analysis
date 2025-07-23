@@ -1,3 +1,49 @@
+tables = ['destt01', 'desti01', 'desta01']
+versions = ['v1']
+
+def run_analysis_for(table_name, version):
+    table_full = f"view_mv_scr2tgt_{table_name}_{version}_71_v1"
+    
+    qry = f"""
+    SELECT
+        partition_dt,
+        COUNT(*) as CNT,
+        COUNT(DISTINCT alert_score_nr) as CNT_alert_score_nr,
+        COUNT(DISTINCT usaa_party_pd_id, alert_ts) as CNT_score_sys,
+        SUM(fraud) as CNT_fraud
+    FROM
+        {table_full}
+    WHERE
+        partition_dt >= '2025-01-01' AND partition_dt <= '2025-03-31'
+    GROUP BY
+        partition_dt
+    ORDER BY
+        partition_dt ASC
+    """
+
+    df = run_hive_qry(qry)
+    
+    # Compute outlier thresholds for volume
+    mu = df['cnt_score_sys'].mean()
+    sigma = df['cnt_score_sys'].std()
+    upper_thresh = mu + 2 * sigma
+    lower_thresh = mu - 2 * sigma
+
+    # Flag volume outliers
+    df['volume_outlier'] = df['cnt_score_sys'].apply(
+        lambda x: 'outlier' if x > upper_thresh or x < lower_thresh else 'normal'
+    )
+
+    print(f"== {table_full} ==")
+    print(df[['partition_dt', 'cnt_score_sys', 'volume_outlier']])
+    print("\n")
+
+# Loop through all tables
+for t in tables:
+    for v in versions:
+        run_analysis_for(t, v)
+
+
 from snowflake.snowpark import Session
 
 def remove_columns(session: Session, segment: str, columns_to_drop: list):
