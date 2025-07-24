@@ -1,3 +1,85 @@
+import pandas as pd
+
+tables = ['destt01', 'desti01', 'desta01']
+versions = ['v1']
+
+def get_weekday_weekend_thresholds(table_full):
+    qry_q1 = f"""
+    SELECT
+        partition_dt,
+        COUNT(DISTINCT usaa_party_pd_id, alert_ts) as CNT_score_sys
+    FROM
+        {table_full}
+    WHERE
+        partition_dt >= '2025-01-01' AND partition_dt <= '2025-03-31'
+    GROUP BY
+        partition_dt
+    """
+    df = run_hive_qry(qry_q1)
+    df['partition_dt'] = pd.to_datetime(df['partition_dt'])
+    df['day_of_week'] = df['partition_dt'].dt.dayofweek  # Monday = 0, Sunday = 6
+    df['day_type'] = df['day_of_week'].apply(lambda x: 'weekend' if x >= 5 else 'weekday')
+
+    stats = {}
+    for day_type in ['weekday', 'weekend']:
+        subset = df[df['day_type'] == day_type]['cnt_score_sys']
+        mu = subset.mean()
+        sigma = subset.std()
+        stats[day_type] = {'mean': mu, 'lower': mu - sigma, 'upper': mu + sigma}
+    
+    return stats
+
+def apply_thresholds_to_may(table_full, stats):
+    qry_may = f"""
+    SELECT
+        partition_dt,
+        COUNT(DISTINCT usaa_party_pd_id, alert_ts) as CNT_score_sys
+    FROM
+        {table_full}
+    WHERE
+        partition_dt >= '2025-05-01' AND partition_dt <= '2025-05-31'
+    GROUP BY
+        partition_dt
+    """
+    df_may = run_hive_qry(qry_may)
+    df_may['partition_dt'] = pd.to_datetime(df_may['partition_dt'])
+    df_may['day_of_week'] = df_may['partition_dt'].dt.dayofweek
+    df_may['day_type'] = df_may['day_of_week'].apply(lambda x: 'weekend' if x >= 5 else 'weekday')
+
+    # Generate full calendar
+    full_dates = pd.date_range('2025-05-01', '2025-05-31')
+    full_df = pd.DataFrame({'partition_dt': full_dates})
+    full_df['day_of_week'] = full_df['partition_dt'].dt.dayofweek
+    full_df['day_type'] = full_df['day_of_week'].apply(lambda x: 'weekend' if x >= 5 else 'weekday')
+
+    df = full_df.merge(df_may[['partition_dt', 'cnt_score_sys']], on='partition_dt', how='left')
+
+    # Apply thresholds
+    def flag(row):
+        if pd.isna(row['cnt_score_sys']):
+            return 'no_data'
+        bounds = stats[row['day_type']]
+        if row['cnt_score_sys'] > bounds['upper'] or row['cnt_score_sys'] < bounds['lower']:
+            return 'outlier'
+        else:
+            return 'normal'
+
+    df['volume_alert'] = df.apply(flag, axis=1)
+
+    print(f"\n== Weekday/Weekend 1σ Threshold Alerts (May 2025): {table_full} ==")
+    print("Thresholds:")
+    print(f"  Weekday: {stats['weekday']['lower']:.0f} – {stats['weekday']['upper']:.0f}")
+    print(f"  Weekend: {stats['weekend']['lower']:.0f} – {stats['weekend']['upper']:.0f}")
+    print(df[['partition_dt', 'day_type', 'cnt_score_sys', 'volume_alert']])
+
+for t in tables:
+    for v in versions:
+        table_full = f"view_mv_scr2tgt_{t}_{v}_71_v1"
+        stats = get_weekday_weekend_thresholds(table_full)
+        apply_thresholds_to_may(table_full, stats)
+
+
+
 SELECT USAA_PARTY_PD_ID
 FROM (
     SELECT DISTINCT USAA_PARTY_PD_ID
