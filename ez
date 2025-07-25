@@ -1,3 +1,35 @@
+# 1. Get top 10 shared devices, excluding NULL
+top10_device = session.sql("""
+    SELECT MB_DEVICE_ID
+    FROM base
+    WHERE MB_DEVICE_ID IS NOT NULL
+    GROUP BY MB_DEVICE_ID
+    HAVING COUNT(DISTINCT PRTY_ID) > 1
+    ORDER BY COUNT(DISTINCT PRTY_ID) DESC
+    LIMIT 10
+""")
+top10_device.createOrReplaceTempView("top10_device")
+
+# 2. Join with base and randomly pick 1 PRTY_ID per device
+sampled_users = session.sql("""
+    SELECT MB_DEVICE_ID, PRTY_ID
+    FROM (
+        SELECT 
+            b.MB_DEVICE_ID,
+            b.PRTY_ID,
+            ROW_NUMBER() OVER (PARTITION BY b.MB_DEVICE_ID ORDER BY rand()) AS rn
+        FROM base b
+        JOIN top10_device t
+          ON b.MB_DEVICE_ID = t.MB_DEVICE_ID
+        WHERE b.MB_DEVICE_ID IS NOT NULL
+    ) t
+    WHERE rn = 1
+""")
+sampled_users.createOrReplaceTempView("sampled_prty_by_device")
+sampled_users.show()
+
+
+
 import pandas as pd
 
 tables = ['destt01', 'desti01', 'desta01']
