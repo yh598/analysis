@@ -1,3 +1,26 @@
+
+-- Step 1: Parse SESN_CUTM_VRBL_TXT into VARIANT
+WITH parsed AS (
+    SELECT 
+        TRY_PARSE_JSON(SESN_CUTM_VRBL_TXT) AS j
+    FROM VW_DGTL_SESN_CPTR
+    WHERE SESN_CUTM_VRBL_TXT IS NOT NULL
+)
+
+-- Step 2: Flatten JSON into key-value pairs
+, flattened AS (
+    SELECT 
+        f.key AS json_key
+    FROM parsed, 
+         LATERAL FLATTEN(input => j) f
+)
+
+-- Step 3: Collect all distinct keys
+SELECT DISTINCT json_key
+FROM flattened
+ORDER BY json_key;
+
+
 # 1. Get top 10 shared devices, excluding NULL
 top10_device = session.sql("""
     SELECT MB_DEVICE_ID
