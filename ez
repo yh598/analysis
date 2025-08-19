@@ -1,4 +1,101 @@
 import re
+from typing import Optional, List
+
+def _sanitize_col_val(val: str) -> str:
+    """Safe suffix for SQL column names from a category value."""
+    if val is None or val == '':
+        return "null"
+    s = re.sub(r'[^0-9a-zA-Z]+', '_', str(val).lower()).strip('_')
+    return s or "blank"
+
+def _dynamic_one_hot(session,
+                     source_view: str,
+                     cat_col: str,
+                     key_cols=('BASE_PARTY_ID','BASE_EVENT_TS'),
+                     top_n: int = 8,
+                     min_count: int = 0,
+                     prefix: Optional[str] = None,
+                     must_include: Optional[List[str]] = None):
+    """
+    Dynamic one-hot for `cat_col` from `source_view`, joined on `key_cols`.
+    - Keeps top_n most frequent (or those >= min_count).
+    - ALWAYS creates columns for values in `must_include`, even if not present.
+    - Column names are `prefix_<sanitized_value>` and all lowercase, plus `<prefix>_other`.
+    """
+    prefix = prefix or _sanitize_col_val(cat_col)
+
+    # 1) Frequency table from data
+    cnt_sql = f"""
+        SELECT {cat_col} AS V, COUNT(*) AS C
+        FROM {source_view}
+        GROUP BY 1
+        ORDER BY C DESC
+    """
+    rows = session.sql(cnt_sql).collect()
+
+    # 2) Choose categories from data
+    keep_vals = []
+    for i, r in enumerate(rows):
+        if (top_n and i < top_n) or (min_count and r['C'] >= min_count):
+            keep_vals.append(r['V'])
+
+    # 3) Force-include expected values
+    if must_include:
+        for v in must_include:
+            if v not in keep_vals:
+                keep_vals.append(v)
+
+    # 4) Build CASE columns
+    case_cols = []
+    for v in keep_vals:
+        label = _sanitize_col_val(v)
+        if v is None:
+            cond = f"{cat_col} IS NULL"
+        else:
+            lit = str(v).replace("'", "''")   # escape single quotes for SQL
+            cond = f"{cat_col} = '{lit}'"
+        case_cols.append(f"CASE WHEN {cond} THEN 1 ELSE 0 END AS {prefix}_{label}")
+
+    # 5) _other bucket (everything not in keep_vals)
+    if keep_vals:
+        parts = []
+        for v in keep_vals:
+            if v is None:
+                parts.append(f"{cat_col} IS NULL")
+            else:
+                lit = str(v).replace("'", "''")
+                parts.append(f"{cat_col} = '{lit}'")
+        other_case = " OR ".join(parts)
+        other_expr = f"CASE WHEN NOT ({other_case}) THEN 1 ELSE 0 END AS {prefix}_other"
+    else:
+        other_expr = f"0 AS {prefix}_other"
+
+    # 6) Final SELECT
+    select_list = ",\n       ".join(list(key_cols) + case_cols + [other_expr])
+    oh_sql = f"SELECT {select_list} FROM {source_view}"
+    return session.sql(oh_sql)
+
+# Guarantee these system versions and networks exist as columns, even if absent
+expected_system_versions = ["Windows", "MacOS", "iOS", "Android", "Linux", "ChromeOS"]
+expected_networks = ["verizon", "att", "tmobile", "comcast", "charter", "spectrum",
+                     "cox", "roadrunner", "brighthouse", "google fiber"]
+
+sys_oh = _dynamic_one_hot(session, "base", "SYSTEM_VERSION",
+                          key_cols=("BASE_PARTY_ID","BASE_EVENT_TS"),
+                          top_n=8, prefix="sys",
+                          must_include=expected_system_versions)
+
+net_oh = _dynamic_one_hot(session, "base", "NETWORK",
+                          key_cols=("BASE_PARTY_ID","BASE_EVENT_TS"),
+                          top_n=10, prefix="net",
+                          must_include=expected_networks)
+
+final_df = (session.table("base")
+            .join(sys_oh, ["BASE_PARTY_ID","BASE_EVENT_TS"])
+            .join(net_oh, ["BASE_PARTY_ID","BASE_EVENT_TS"]))
+
+
+import re
 from typing import Optional
 
 def _sanitize_col_val(val: str) -> str:
