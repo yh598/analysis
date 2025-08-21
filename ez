@@ -1,3 +1,117 @@
+def glassbox_features(segment: str, base_table: str, session_table: str):
+    n_days_list = [1, 3, 7, 30, 60]
+    id_types = ["DEVICE_ID", "MACHINE_ID", "VISITOR_ID"]
+
+    # Load base events into a temporary view
+    base_df = session.sql(f"""
+        SELECT
+            PARTY_ID         AS base_party_id,
+            SESSION_END_TS   AS base_event_ts,
+            MB_DEVICE_ID     AS DEVICE_ID,
+            MACHINE_ID       AS MACHINE_ID,
+            VISITOR_ID       AS VISITOR_ID,
+            USER_AGENT_OS_TX AS SYSTEM_VERSION,
+            NETWORK          AS NETWORK
+        FROM {base_table}
+    """)
+    base_df.create_or_replace_temp_view("base")
+
+    # Identify shared IDs (IDs associated with >= 2 distinct base_party_id)
+    for id_col in id_types:
+        shared_df = session.sql(f"""
+            SELECT {id_col}
+            FROM base
+            GROUP BY {id_col}
+            HAVING COUNT(DISTINCT base_party_id) >= 2
+        """)
+        shared_df.create_or_replace_temp_view(f"shared_{id_col.lower()}")
+
+    # Build the query for each ID type and collect in a list
+    all_queries = []
+    for id_col in id_types:
+        query = f"""
+            SELECT
+                a.USAA_PARTY_PD_ID        AS party_id,
+                a.event_ts               AS event_ts,
+                a.partition_dt           AS partition_dt,
+                bp.{id_col}              AS {id_col},
+                bp.base_event_ts         AS base_event_ts,
+                sj.other_party_id        AS other_party_id,
+                '{id_col}'               AS id_type
+            FROM {session_table} a
+            LEFT JOIN base bp 
+                ON bp.base_party_id = a.USAA_PARTY_PD_ID 
+                AND bp.base_event_ts = a.event_ts
+            LEFT JOIN (
+                SELECT 
+                    B.base_party_id,
+                    B.base_event_ts,
+                    B.{id_col}           AS shared_id,
+                    P.PRTY_ID            AS other_party_id,
+                    P.SSN_END_TS         AS event_ts
+                FROM base B
+                JOIN shared_{id_col.lower()} S 
+                    ON B.{id_col} = S.{id_col}
+                JOIN {session_table} P 
+                    ON B.{id_col} = P.{id_col}
+                    AND B.base_party_id <> P.PRTY_ID
+            ) sj 
+            ON bp.{id_col} = sj.shared_id
+            AND bp.base_party_id = sj.base_party_id
+            AND bp.base_event_ts = sj.base_event_ts
+            WHERE bp.{id_col} IS NOT NULL
+        """
+        all_queries.append(query.strip())
+
+    # Combine all ID-type queries using UNION ALL
+    union_sql = " UNION ALL\n".join(all_queries)
+
+    # Define feature aggregations for each ID type over each time window in n_days_list
+    feature_exprs = []
+    for id_col in id_types:
+        for n in n_days_list:
+            feature_exprs.append(
+                f"COUNT(DISTINCT CASE WHEN id_type = '{id_col}' AND DATEDIFF(day, base_event_ts, event_ts) <= {n} THEN other_party_id END) "
+                f"AS members_sharing_{id_col.lower()}_last_{n}_days"
+            )
+            feature_exprs.append(
+                f"COUNT(DISTINCT CASE WHEN id_type = '{id_col}' AND DATEDIFF(day, base_event_ts, event_ts) <= {n} THEN {id_col} END) "
+                f"AS {id_col.lower()}_added_last_{n}_days"
+            )
+
+    # Compose the final SQL with aggregated features and row-number deduplication
+    final_sql = f"""
+        WITH unioned_data AS (
+            {union_sql}
+        ),
+        aggregated AS (
+            SELECT
+                party_id,
+                event_ts,
+                partition_dt,
+                base_event_ts,
+                {", ".join(feature_exprs)},
+                DATEDIFF(day, MAX(CASE WHEN base_event_ts < event_ts THEN base_event_ts END), event_ts) 
+                    AS days_since_last_base_event
+            FROM unioned_data
+            GROUP BY party_id, event_ts, partition_dt, base_event_ts
+        ),
+        deduped AS (
+            SELECT *
+            FROM aggregated
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY party_id, event_ts 
+                ORDER BY base_event_ts DESC
+            ) = 1
+        )
+        SELECT * 
+        FROM deduped
+    """
+    # Execute the final SQL and return the resulting DataFrame
+    final_df = session.sql(final_sql)
+    return final_df
+
+
 import re
 from typing import Optional, List
 
