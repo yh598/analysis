@@ -1,3 +1,21 @@
+# ----------------------------
+# 0) Discover available ID cols
+# ----------------------------
+# Split database.schema.table into parts
+parts = session_table.split(".")
+if len(parts) != 3:
+    raise ValueError(f"Expected session_table as DB.SCHEMA.TABLE, got: {session_table}")
+db, schema, tbl = parts
+
+probe_cols_sql = f"""
+    SELECT UPPER(column_name) AS COL
+    FROM {db}.INFORMATION_SCHEMA.COLUMNS
+    WHERE UPPER(table_schema) = UPPER('{schema}')
+      AND UPPER(table_name)   = UPPER('{tbl}')
+"""
+existing_cols = {r.COL for r in session.sql(probe_cols_sql).collect()}
+
+
 def glassbox_features(
     segment: str,
     base_table: str,
