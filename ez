@@ -1,3 +1,208 @@
+def glassbox_features(
+    segment: str,
+    base_table: str,
+    session_table: str,
+    n_days_list=(1, 7, 30, 60),
+):
+    """
+    Build 'glassbox' features per ID type over multiple time windows and save to
+    DESTRO.{segment}.GLASSBOX_FEATURE.
+
+    Parameters
+    ----------
+    segment : str
+        Segment name used in final table path.
+    base_table : str
+        Fact table that has (USAA_PARTY_PD_ID, event_ts, event_date).
+    session_table : str
+        Session-level table with party_id, timestamps, device/machine/visitor IDs, etc.
+    n_days_list : Iterable[int]
+        Windows in days for feature aggregations.
+    """
+
+    # ----------------------------
+    # 0) Discover available ID cols
+    # ----------------------------
+    # We only include id types that actually exist in the session table to avoid
+    # "invalid identifier" errors (e.g., MACHINE_ID missing).
+    probe_cols_sql = f"""
+        SELECT UPPER(column_name) AS COL
+        FROM {session_table.split('.')[0]}.INFORMATION_SCHEMA.COLUMNS
+        WHERE UPPER(table_schema) = UPPER(split_part('{session_table}', '.', 2))
+          AND UPPER(table_name)  = UPPER(split_part('{session_table}', '.', 3))
+    """
+    existing_cols = {r.COL for r in session.sql(probe_cols_sql).collect()}
+
+    all_candidate_ids = ["DEVICE_ID", "MACHINE_ID", "VISITOR_ID"]
+    id_types = [c for c in all_candidate_ids if c in existing_cols]
+
+    if not id_types:
+        raise ValueError(
+            f"No ID columns from {all_candidate_ids} were found in {session_table}. "
+            "Add at least one of these columns or update the function to use the available ones."
+        )
+
+    # -----------------------------------------
+    # 1) Build a base temp view from sessions
+    # -----------------------------------------
+    # Select only columns that exist. Missing ones will be selected as NULL (just in case
+    # you later want to keep a fixed schema); however, we won't build features for non-existing ones.
+    select_cols = [
+        "PRTY_ID                              AS base_party_id",
+        "SESS_END_TS                          AS base_event_ts",
+        *(f"{c} AS {c}" if c in existing_cols else f"NULL AS {c}" for c in all_candidate_ids),
+        "USER_AGENT_OS_TX                     AS SYSTEM_VERSION" if "USER_AGENT_OS_TX" in existing_cols else "NULL AS SYSTEM_VERSION",
+        "NETWORK                              AS NETWORK" if "NETWORK" in existing_cols else "NULL AS NETWORK",
+    ]
+
+    base_sql = f"""
+        SELECT
+            {",\n            ".join(select_cols)}
+        FROM {session_table}
+    """
+
+    base_df = session.sql(base_sql)
+    base_df.create_or_replace_temp_view("base")
+
+    # ---------------------------------------------------------
+    # 2) For each id type, build the shared-id subquery & union
+    # ---------------------------------------------------------
+    all_queries = []
+
+    for id_col in id_types:
+        # Shared-ID view: same {id_col} used by >=2 distinct base_party_id
+        shared_view_name = f"shared_{id_col.lower()}"
+        shared_sql = f"""
+            SELECT {id_col}
+            FROM base
+            GROUP BY {id_col}
+            HAVING COUNT(DISTINCT base_party_id) >= 2
+        """
+        session.sql(shared_sql).create_or_replace_temp_view(shared_view_name)
+
+        # For each base event, attach id_col, and find other_party_id events that share that id
+        # Join pattern:
+        #  a = base_table fact (USAA_PARTY_PD_ID, event_ts, event_date)
+        #  bp = base view (party + timestamp of the base event)
+        #  sj = other events sharing the same id_col but different party
+        q = f"""
+            SELECT
+                a.USAA_PARTY_PD_ID,
+                a.event_ts,
+                a.event_date,
+                bp.{id_col}                      AS id_col,
+                bp.base_event_ts                 AS base_event_ts,
+                sj.other_party_id                AS other_party_id,
+                '{id_col}'                       AS id_type,
+                sj.event_ts                      AS event_ts_other
+            FROM {base_table} a
+            LEFT JOIN base bp
+                ON  bp.base_party_id = a.USAA_PARTY_PD_ID
+                AND bp.base_event_ts = a.event_ts
+            LEFT JOIN (
+                SELECT
+                    b.base_party_id,
+                    b.base_event_ts,
+                    b.{id_col}                   AS shared_id,
+                    p.PRTY_ID                    AS other_party_id,
+                    p.SESS_END_TS                AS event_ts
+                FROM base b
+                JOIN {session_table} p
+                    ON p.{id_col} IS NOT NULL
+                   AND b.{id_col} = p.{id_col}
+                   AND b.base_party_id <> p.PRTY_ID
+                WHERE b.{id_col} IS NOT NULL
+                  AND b.{id_col} IN (SELECT {id_col} FROM {shared_view_name})
+            ) sj
+                ON  bp.{id_col}       = sj.shared_id
+                AND bp.base_party_id  = sj.base_party_id
+                AND bp.base_event_ts  = sj.base_event_ts
+            WHERE bp.{id_col} IS NOT NULL
+        """
+        all_queries.append(q.strip())
+
+    union_sql = "\nUNION ALL\n".join(all_queries)
+
+    # ---------------------------------------------------------
+    # 3) Feature aggregations over requested day windows
+    # ---------------------------------------------------------
+    feature_exprs = []
+    for id_col in id_types:
+        for n in n_days_list:
+            # Members sharing this id within last n days
+            feature_exprs.append(
+                f"""
+                COUNT(DISTINCT CASE
+                    WHEN id_type = '{id_col}'
+                     AND DATEDIFF(day, base_event_ts, event_ts_other) <= {n}
+                    THEN other_party_id
+                END) AS members_sharing_{id_col.lower()}_last_{n}_days
+                """.strip()
+            )
+            # New IDs added (count distinct id values) within last n days
+            feature_exprs.append(
+                f"""
+                COUNT(DISTINCT CASE
+                    WHEN id_type = '{id_col}'
+                     AND DATEDIFF(day, base_event_ts, event_ts_other) <= {n}
+                    THEN id_col
+                END) AS {id_col.lower()}_added_last_{n}_days
+                """.strip()
+            )
+
+    # Safe fallback when there are no feature expressions (shouldn't happen if id_types not empty)
+    if not feature_exprs:
+        feature_exprs = ["0 AS dummy_feature_no_ids_found"]
+
+    features_joined = ",\n                ".join(feature_exprs)
+
+    # ---------------------------------------------------------
+    # 4) Compose final SQL + row-number de-duplication
+    # ---------------------------------------------------------
+    final_sql = f"""
+        WITH unioned_data AS (
+            {union_sql}
+        ),
+        aggregated AS (
+            SELECT
+                USAA_PARTY_PD_ID,
+                event_ts,
+                event_date,
+                base_event_ts,
+                {features_joined},
+                DATEDIFF(day, base_event_ts, event_ts) AS days_since_last_base_event
+            FROM unioned_data
+            GROUP BY
+                USAA_PARTY_PD_ID, event_ts, event_date, base_event_ts
+        ),
+        deduped AS (
+            SELECT *
+            FROM aggregated
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY USAA_PARTY_PD_ID, event_ts
+                ORDER BY base_event_ts DESC
+            ) = 1
+        )
+        SELECT * FROM deduped
+    """
+
+    final_df = session.sql(final_sql)
+
+    # ---------------------------------
+    # 5) Persist the result as a table
+    # ---------------------------------
+    schema = session.get_current_schema().replace('"', '')
+    database = session.get_current_database().replace('"', '')
+    table = f"DESTRO.{segment}.GLASSBOX_FEATURE"
+
+    full_table_name = ".".join([database, schema, table])
+    final_df.write.save_as_table(full_table_name, mode="overwrite")
+
+    return final_df
+
+
+
+
 def glassbox_features(segment: str, base_table: str, session_table: str):
     n_days_list = [1, 3, 7, 30, 60]
     id_types = ["DEVICE_ID", "MACHINE_ID", "VISITOR_ID"]
