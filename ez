@@ -1,3 +1,77 @@
+# --- 1) Imports
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.isotonic import IsotonicRegression
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import brier_score_loss, roc_auc_score
+
+# --- 2) Helper: Expected Calibration Error (ECE)
+def expected_calibration_error(y_true, y_prob, n_bins=10):
+    bins = np.linspace(0.0, 1.0, n_bins + 1)
+    idx = np.digitize(y_prob, bins) - 1
+    ece = 0.0
+    total = len(y_true)
+    for b in range(n_bins):
+        mask = idx == b
+        if np.any(mask):
+            acc = y_true[mask].mean()
+            conf = y_prob[mask].mean()
+            w = mask.mean()
+            ece += w * abs(acc - conf)
+    return ece
+
+# --- 3) You provide these:
+# base_model: your already-fitted classifier with predict_proba
+# X_cal, y_cal: calibration set (holdout from training)
+# X_test, y_test: final test set (never used for training nor calibration)
+
+# Example:
+# probs_cal_raw  = base_model.predict_proba(X_cal)[:, 1]
+# probs_test_raw = base_model.predict_proba(X_test)[:, 1]
+
+# --- 4) Fit isotonic on the CALIBRATION set, then transform TEST probs
+def fit_isotonic_and_apply(probs_cal_raw, y_cal, probs_test_raw):
+    iso = IsotonicRegression(out_of_bounds='clip')  # clip keeps outputs in [0,1]
+    iso.fit(probs_cal_raw, y_cal)                   # learn the monotonic mapping
+    probs_test_iso = iso.transform(probs_test_raw)  # calibrated probabilities
+    return iso, probs_test_iso
+
+# >>> UNCOMMENT AND RUN (replace with your arrays):
+# iso, probs_test_iso = fit_isotonic_and_apply(probs_cal_raw, y_cal, probs_test_raw)
+
+# --- 5) Metrics + Plot
+def compare_calibration(y_test, probs_test_raw, probs_test_iso, n_bins=10, title='Calibration: Raw vs Isotonic'):
+    # Metrics
+    brier_raw = brier_score_loss(y_test, probs_test_raw)
+    brier_iso = brier_score_loss(y_test, probs_test_iso)
+    ece_raw = expected_calibration_error(y_test, probs_test_raw, n_bins=n_bins)
+    ece_iso = expected_calibration_error(y_test, probs_test_iso, n_bins=n_bins)
+    auc_raw = roc_auc_score(y_test, probs_test_raw)
+    auc_iso = roc_auc_score(y_test, probs_test_iso)
+
+    print(f"AUC      — raw: {auc_raw:0.4f} | isotonic: {auc_iso:0.4f}")
+    print(f"Brier    — raw: {brier_raw:0.4f} | isotonic: {brier_iso:0.4f} (lower is better)")
+    print(f"ECE({n_bins} bins) — raw: {ece_raw:0.4f} | isotonic: {ece_iso:0.4f} (lower is better)")
+
+    # Calibration curve
+    frac_pos_raw,  mean_pred_raw  = calibration_curve(y_test, probs_test_raw, n_bins=n_bins, strategy='uniform')
+    frac_pos_iso,  mean_pred_iso  = calibration_curve(y_test, probs_test_iso, n_bins=n_bins, strategy='uniform')
+
+    plt.figure(figsize=(7,6))
+    plt.plot([0,1],[0,1],'--',label='Perfectly calibrated')
+    plt.plot(mean_pred_raw, frac_pos_raw, marker='o', label='Raw')
+    plt.plot(mean_pred_iso, frac_pos_iso, marker='o', label='Isotonic')
+    plt.xlabel('Mean predicted probability')
+    plt.ylabel('Fraction of positives')
+    plt.title(title)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+# >>> UNCOMMENT AND RUN (after creating probs_test_iso):
+# compare_calibration(y_test, probs_test_raw, probs_test_iso, n_bins=10)
+
+
 # ----------------------------
 # 0) Discover available ID cols
 # ----------------------------
