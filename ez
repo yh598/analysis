@@ -1,6 +1,76 @@
 from xgboost import XGBClassifier
 import pandas as pd
 
+def save_top_features_with_base(spark, base_table, right_table_prefix, output_table,
+                                windows=["1D","7D","30D"], 
+                                target_col="FRAUD", join_key="USAA_PARTY_PO_ID", top_n=10):
+    """
+    Join base with right tables (1D,7D,30D), pick top N features,
+    merge, and save results back to base table.
+    """
+
+    all_features = []
+
+    # Loop through each window
+    for w in windows:
+        right_table = f"{right_table_prefix}_{w}"
+
+        # Join base with right
+        join_df = spark.sql(f"""
+            SELECT a.*, b.*
+            FROM {base_table} a
+            LEFT JOIN {right_table} b 
+            ON a.{join_key} = b.{join_key}
+        """).toPandas()
+
+        # Exclude IDs and label
+        exclude_cols = [target_col, join_key, "PARTITION_DT", "USAA_PARTY_SK",
+                        "USAPARTYPRIMARYDIGITID", "RECORD_DT", "RECORD_VERSION", 
+                        "PROCESS_DT", "PROCESS_IS", "INITIATIVE"]
+        features = [c for c in join_df.columns if c not in exclude_cols]
+        X, y = join_df[features], join_df[target_col]
+
+        # Train model
+        model = XGBClassifier(use_label_encoder=False, eval_metric="logloss")
+        model.fit(X, y)
+
+        # Feature importance (right table only, e.g. DIG features)
+        feat_imp = pd.DataFrame({
+            "Feature": features,
+            "Importance": model.feature_importances_
+        })
+        feat_imp = feat_imp[feat_imp["Feature"].str.startswith("DIG")]
+        feat_imp = feat_imp.sort_values("Importance", ascending=False).head(top_n)
+
+        # Add suffix
+        feat_imp["Feature"] = feat_imp["Feature"].astype(str) + f"_{w}"
+        all_features.append(feat_imp)
+
+    # Merge features across windows
+    merged_features = pd.concat(all_features, axis=0).reset_index(drop=True)
+
+    # Convert back to Spark
+    merged_spark_df = spark.createDataFrame(merged_features)
+
+    # Save back to a new table (overwrite)
+    merged_spark_df.write.mode("overwrite").saveAsTable(output_table)
+
+    return merged_features
+
+merged_feats = save_top_features_with_base(
+    spark=sprk,
+    base_table="PBNKZE250.EZ250.FAM_V3_TRAIN_DIGITAL_BASE",
+    right_table_prefix="PBNKZE250.EZ250.FAM_V3_TRAIN_DIGITAL",
+    output_table="PBNKZE250.EZ250.FAM_V3_TOP_DIG_FEATURES",
+    windows=["1D","7D","30D"],
+    target_col="FRAUD"
+)
+
+print(merged_feats)
+
+from xgboost import XGBClassifier
+import pandas as pd
+
 def get_top_features_with_base(spark, base_table, right_table_prefix, windows=["1D","7D","30D"], 
                                target_col="FRAUD", join_key="USAA_PARTY_PO_ID", top_n=10):
     """
