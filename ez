@@ -1,3 +1,54 @@
+def merge_features(session, segment: str, key: str):
+    """
+    Merge feature tables for a given segment and key into one final table.
+    
+    Args:
+        session: Spark/Snowpark session
+        segment: segment name (e.g. 'DIGITAL', 'TELEPHONE', 'MSRDIG')
+        key: join key (e.g. 'DESTI', 'MSR')
+    """
+    
+    base_table = f"PBNKEZ250.EZ250.FAM_V3_TRAIN_{segment}_1 a"
+    output_table = f"PBNKEZ250.EZ250.FAM_V3_TRAIN_{segment}_FINAL"
+
+    sql = f"""
+    SELECT a.*
+         , b.* EXCLUDE (ATO_FRAUD,FRAUD,DSM_SCR_DESTI_SK,USAA_PARTY_PO_ID,PRINCIPLE_PARTY_PO_ID,EVENT_TS,EVENT_DATE)
+         , c.* EXCLUDE (ATO_FRAUD,FRAUD,DSM_SCR_DESTI_SK,USAA_PARTY_PO_ID,PRINCIPLE_PARTY_PO_ID,EVENT_TS,EVENT_DATE)
+         , d.* EXCLUDE (ATO_FRAUD,FRAUD,DSM_SCR_DESTI_SK,USAA_PARTY_PO_ID,PRINCIPLE_PARTY_PO_ID,EVENT_TS,EVENT_DATE)
+         , e.* EXCLUDE (ATO_FRAUD,FRAUD,DSM_SCR_DESTI_SK,USAA_PARTY_PO_ID,PRINCIPLE_PARTY_PO_ID,EVENT_TS,EVENT_DATE)
+         , f.* EXCLUDE (ATO_FRAUD,FRAUD,DSM_SCR_DESTI_SK,USAA_PARTY_PO_ID,PRINCIPLE_PARTY_PO_ID,EVENT_TS,EVENT_DATE)
+    FROM {base_table}
+    
+    LEFT JOIN PBNKEZ250.EZ250.FAM_V3_TRAIN_{segment}_{key}_MEMBER_FEATURES   b
+           ON a.DSM_SCR_{key}_SK = b.DSM_SCR_{key}_SK
+    LEFT JOIN PBNKEZ250.EZ250.FAM_V3_TRAIN_{segment}_{key}_MEMBER_CROSSDIM_FEATURES c
+           ON a.DSM_SCR_{key}_SK = c.DSM_SCR_{key}_SK
+    LEFT JOIN PBNKEZ250.EZ250.FAM_V3_TRAIN_{segment}_MSR{key}_MEMBER_FEATURES d
+           ON a.DSM_SCR_{key}_SK = d.DSM_SCR_{key}_SK
+    LEFT JOIN PBNKEZ250.EZ250.FAM_V3_TRAIN_{segment}_MSR{key}_MEMBER_CROSSDIM_FEATURES e
+           ON a.DSM_SCR_{key}_SK = e.DSM_SCR_{key}_SK
+    LEFT JOIN PBNKEZ250.EZ250.FAM_V3_TRAIN_{segment}_IVR_MEMBER_FEATURES f
+           ON a.DSM_SCR_{key}_SK = f.DSM_SCR_{key}_SK
+    """
+
+    df = session.sql(sql)
+    df.write.save_as_table(output_table, mode="overwrite")
+
+    print(f"✅ Final merged table written to {output_table}")
+    return output_table
+
+# For digital segment
+merge_features(session, segment="DIGITAL", key="DESTI")
+
+# For telephone segment
+merge_features(session, segment="TELEPHONE", key="DESTI")
+
+# For msrdig segment
+merge_features(session, segment="MSRDIG", key="MSR")
+
+
+
 def select_and_append_features(
     spark, 
     base_table, 
