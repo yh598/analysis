@@ -1,3 +1,17 @@
+import pyautogui
+import time
+
+print("Keeping Slack active... Press CTRL+C to stop.")
+
+while True:
+    # tiny move right
+    pyautogui.moveRel(1, 0, duration=0.1)
+    # tiny move left (back to original spot)
+    pyautogui.moveRel(-1, 0, duration=0.1)
+    time.sleep(60)  # wait 60 seconds
+
+
+
 def merge_features(session, segment: str, key: str):
     """
     Merge feature tables for a given segment and key into one final table.
