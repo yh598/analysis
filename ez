@@ -1,5 +1,74 @@
 from snowflake.snowpark import functions as F, Window
 
+def split_and_save_by_id(input_table: str, output_base: str, id_col: str, train_frac: float = 0.6):
+    """
+    Stratified split by ATO_FRAUD at the ID level.
+    Ensures:
+      - Balanced fraud rate across train/test
+      - No overlapping IDs between train/test
+    """
+
+    # Load input
+    df = session.sql(f"SELECT * FROM {input_table}")
+
+    def stratified_ids(df, train_frac):
+        # Get distinct IDs for the group
+        ids = df.select(id_col).distinct().with_column("rand_val", F.random())
+        total = ids.count()
+        cutoff = int(total * train_frac)
+
+        # Split IDs into train/test
+        w = Window.order_by("rand_val")
+        ids = ids.with_column("row_num", F.row_number().over(w))
+        train_ids = ids.filter(F.col("row_num") <= cutoff).drop("row_num")
+        test_ids  = ids.filter(F.col("row_num") >  cutoff).drop("row_num")
+
+        # Join back to original rows
+        train_part = df.join(train_ids, id_col)
+        test_part  = df.join(test_ids,  id_col)
+
+        return train_part, test_part
+
+    # Fraud vs Nonfraud stratified splits
+    fraud_df = df.filter(df["ATO_FRAUD"] == 1)
+    nonfraud_df = df.filter(df["ATO_FRAUD"] == 0)
+
+    fraud_train, fraud_test = stratified_ids(fraud_df, train_frac)
+    nonfraud_train, nonfraud_test = stratified_ids(nonfraud_df, train_frac)
+
+    # Combine
+    train_df = fraud_train.union_all(nonfraud_train)
+    test_df  = fraud_test.union_all(nonfraud_test)
+
+    # Save to tables
+    train_out = f"{output_base}_TRAIN"
+    test_out  = f"{output_base}_TEST"
+    train_df.write.save_as_table(train_out, mode="overwrite")
+    test_df.write.save_as_table(test_out, mode="overwrite")
+
+    # Print stats
+    def fraud_rate(df, name):
+        total = df.count()
+        frauds = df.filter(df["ATO_FRAUD"] == 1).count()
+        print(f"{name} set: total={total:,}, frauds={frauds:,}, fraud_rate={frauds/total:.2%}")
+
+    fraud_rate(train_df, "Train")
+    fraud_rate(test_df, "Test")
+
+    # Check ID overlap
+    overlap = train_df.select(id_col).intersect(test_df.select(id_col)).count()
+    if overlap > 0:
+        print(f"Warning: {overlap} IDs appear in both Train and Test.")
+    else:
+        print("No ID overlap between Train and Test.")
+
+    return train_df, test_df
+
+
+
+
+from snowflake.snowpark import functions as F, Window
+
 def split_and_save(input_table: str, output_base: str, id_col: str, train_frac: float = 0.6):
     """
     Stratified split by ATO_FRAUD, then save to TRAIN/TEST tables.
