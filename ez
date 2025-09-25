@@ -1,3 +1,15 @@
+def print_fraud_rate(df, split_name="Train"):
+    total = df.count()
+    frauds = df.filter(df["ATO_FRAUD"] == 1).count()
+    rate = frauds / total if total > 0 else 0
+    print(f"{split_name} set: total={total:,}, frauds={frauds:,}, fraud_rate={rate:.2%}")
+
+# After splitting
+train_df, test_df = split_by_id(df, id_col="USAA_PARTY_PD_ID")
+
+print_fraud_rate(train_df, "Train")
+print_fraud_rate(test_df, "Test")
+
 # Load the final telephone training table
 df = session.sql("SELECT * FROM PBNKEZ250.EZ250.FAM_V3_TRAIN_TELEPHONE_FINAL")
 
