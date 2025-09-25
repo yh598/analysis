@@ -1,3 +1,42 @@
+from snowflake.snowpark import functions as F, Window
+
+def stratified_split_by_id(df, id_col, train_frac: float = 0.6):
+    """
+    Stratified split by ATO_FRAUD.
+    Ensures both fraud and non-fraud subsets are split ~exactly train_frac / (1-train_frac).
+    """
+
+    def split_group(group_df, train_frac):
+        # Assign random row number within the group
+        w = Window.order_by(F.random())
+        group_df = group_df.with_column("row_num", F.row_number().over(w))
+        total = group_df.count()
+        cutoff = int(total * train_frac)
+        train = group_df.filter(F.col("row_num") <= cutoff).drop("row_num")
+        test  = group_df.filter(F.col("row_num") >  cutoff).drop("row_num")
+        return train, test
+
+    # Fraud group
+    fraud_df = df.filter(df["ATO_FRAUD"] == 1)
+    fraud_train, fraud_test = split_group(fraud_df, train_frac)
+
+    # Non-fraud group
+    nonfraud_df = df.filter(df["ATO_FRAUD"] == 0)
+    nonfraud_train, nonfraud_test = split_group(nonfraud_df, train_frac)
+
+    # Combine
+    train_df = fraud_train.union_all(nonfraud_train)
+    test_df  = fraud_test.union_all(nonfraud_test)
+
+    # Print stats
+    for name, part in [("Train", train_df), ("Test", test_df)]:
+        total = part.count()
+        frauds = part.filter(part["ATO_FRAUD"] == 1).count()
+        print(f"{name} set: total={total:,}, frauds={frauds:,}, fraud_rate={frauds/total:.2%}")
+
+    return train_df, test_df
+
+
 from snowflake.snowpark import functions as F
 
 def stratified_split_by_id(df, id_col, train_frac: float = 0.6):
