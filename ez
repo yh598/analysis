@@ -1,3 +1,22 @@
+df = session.sql("SELECT * FROM PBNKEZ250.EZ250.FAM_V3_TRAIN_DIGITAL_FINAL")
+
+fraud_df = df.filter(df["ATO_FRAUD"] == 1)
+nonfraud_df = df.filter(df["ATO_FRAUD"] == 0)
+
+fraud_count = fraud_df.count()
+sample_ratio = fraud_count / nonfraud_df.count()
+
+nonfraud_sample = nonfraud_df.sample(sample_ratio, seed=42)
+
+balanced_df = fraud_df.union_all(nonfraud_sample)
+balanced_df = balanced_df.with_column("rand_val", F.random()).sort(F.col("rand_val")).drop("rand_val")
+
+balanced_df.write.save_as_table(
+    "PBNKEZ250.EZ250.FAM_V3_TRAIN_DIGITAL_FINAL_DOWNSAMPLED", 
+    mode="overwrite"
+)
+
+
 def print_fraud_rate(df, split_name="Train"):
     total = df.count()
     frauds = df.filter(df["ATO_FRAUD"] == 1).count()
