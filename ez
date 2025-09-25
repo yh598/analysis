@@ -1,5 +1,63 @@
 from snowflake.snowpark import functions as F, Window
 
+def split_and_save(input_table: str, output_base: str, id_col: str, train_frac: float = 0.6):
+    """
+    Stratified split by ATO_FRAUD, then save to TRAIN/TEST tables.
+    Example:
+      split_and_save("PBNKEZ250.EZ250.FAM_V3_TRAIN_DIGITAL_FINAL_DOWNSAMPLED",
+                     "PBNKEZ250.EZ250.FAM_V3_DIGITAL", 
+                     id_col="USAA_PARTY_PD_ID", train_frac=0.6)
+    """
+
+    # Load input
+    df = session.sql(f"SELECT * FROM {input_table}")
+
+    def split_group(group_df, train_frac):
+        w = Window.order_by(F.random())
+        group_df = group_df.with_column("row_num", F.row_number().over(w))
+        total = group_df.count()
+        cutoff = int(total * train_frac)
+        train = group_df.filter(F.col("row_num") <= cutoff).drop("row_num")
+        test  = group_df.filter(F.col("row_num") >  cutoff).drop("row_num")
+        return train, test
+
+    # Fraud & Non-Fraud splits
+    fraud_df = df.filter(df["ATO_FRAUD"] == 1)
+    fraud_train, fraud_test = split_group(fraud_df, train_frac)
+
+    nonfraud_df = df.filter(df["ATO_FRAUD"] == 0)
+    nonfraud_train, nonfraud_test = split_group(nonfraud_df, train_frac)
+
+    # Combine train/test
+    train_df = fraud_train.union_all(nonfraud_train)
+    test_df  = fraud_test.union_all(nonfraud_test)
+
+    # Save
+    train_out = f"{output_base}_TRAIN"
+    test_out  = f"{output_base}_TEST"
+
+    train_df.write.save_as_table(train_out, mode="overwrite")
+    test_df.write.save_as_table(test_out, mode="overwrite")
+
+    # Print stats
+    for name, part in [("Train", train_df), ("Test", test_df)]:
+        total = part.count()
+        frauds = part.filter(part["ATO_FRAUD"] == 1).count()
+        print(f"{name} set saved to {output_base}_{name.upper()}")
+        print(f"  total={total:,}, frauds={frauds:,}, fraud_rate={frauds/total:.2%}")
+
+    return train_df, test_df
+
+train_df, test_df = split_and_save(
+    "PBNKEZ250.EZ250.FAM_V3_TRAIN_DIGITAL_FINAL_DOWNSAMPLED",
+    "PBNKEZ250.EZ250.FAM_V3_DIGITAL",
+    id_col="USAA_PARTY_PD_ID",
+    train_frac=0.6
+)
+
+
+from snowflake.snowpark import functions as F, Window
+
 def stratified_split_by_id(df, id_col, train_frac: float = 0.6):
     """
     Stratified split by ATO_FRAUD.
