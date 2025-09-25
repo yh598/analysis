@@ -1,3 +1,26 @@
+# Calculate feature stats (you already have this part)
+numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+feature_stats = df[numeric_cols].describe().transpose()
+
+feature_stats['missing_pct'] = df[numeric_cols].isnull().mean() * 100
+feature_stats['zero_pct'] = (df[numeric_cols] == 0).mean() * 100
+feature_stats['n_unique'] = df[numeric_cols].nunique()
+
+# Identify features to drop
+drop_features = feature_stats[
+    (feature_stats['missing_pct'] == 100) |
+    (feature_stats['zero_pct'] == 100) |
+    (feature_stats['n_unique'] <= 1)
+].index.tolist()
+
+print(f"Number of features to drop: {len(drop_features)}")
+print(drop_features[:20])  # show first 20 for inspection
+
+# Drop them from your dataset
+df_clean = df.drop(columns=drop_features)
+
+print(f"Original features: {len(df.columns)}, After cleaning: {len(df_clean.columns)}")
+
 import pyautogui
 import time
 
