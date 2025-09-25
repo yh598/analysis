@@ -1,3 +1,74 @@
+import builtins
+from snowflake.snowpark import functions as F, Window
+
+def split_by_id(input_table: str, output_base: str, id_col: str, train_frac: float = 0.6):
+    """
+    Creates Train/Test sets where:
+      - Each ID appears in only one split
+      - Both Train and Test have fraud_rate = 0.5
+    """
+
+    # Load input table
+    df = session.sql(f"SELECT * FROM {input_table}")
+
+    # Assign IDs randomly to Train/Test
+    ids = df.select(id_col).distinct().with_column("rand_val", F.random())
+    total_ids = ids.count()
+    cutoff = int(total_ids * train_frac)
+
+    w = Window.order_by("rand_val")
+    ids = ids.with_column("row_num", F.row_number().over(w))
+    train_ids = ids.filter(F.col("row_num") <= cutoff).drop("rand_val", "row_num")
+    test_ids  = ids.filter(F.col("row_num") >  cutoff).drop("rand_val", "row_num")
+
+    train_df = df.join(train_ids, id_col)
+    test_df  = df.join(test_ids, id_col)
+
+    # Rebalance to 50% fraud in each split
+    def rebalance(split_df):
+        fraud_df = split_df.filter(split_df["ATO_FRAUD"] == 1).with_column("rand_val", F.random())
+        nonfraud_df = split_df.filter(split_df["ATO_FRAUD"] == 0).with_column("rand_val", F.random())
+
+        fraud_count = fraud_df.count()
+        nonfraud_count = nonfraud_df.count()
+        min_count = builtins.min(fraud_count, nonfraud_count)
+
+        w = Window.order_by("rand_val")
+        fraud_df = fraud_df.with_column("row_num", F.row_number().over(w))
+        nonfraud_df = nonfraud_df.with_column("row_num", F.row_number().over(w))
+
+        fraud_bal = fraud_df.filter(F.col("row_num") <= min_count).drop("rand_val", "row_num")
+        nonfraud_bal = nonfraud_df.filter(F.col("row_num") <= min_count).drop("rand_val", "row_num")
+
+        return fraud_bal.union_all(nonfraud_bal)
+
+    train_df = rebalance(train_df)
+    test_df  = rebalance(test_df)
+
+    # Save to tables
+    train_out = f"{output_base}_TRAIN"
+    test_out  = f"{output_base}_TEST"
+    train_df.write.save_as_table(train_out, mode="overwrite")
+    test_df.write.save_as_table(test_out, mode="overwrite")
+
+    # Verify fraud rate and ID overlap
+    def fraud_rate(df, name):
+        total = df.count()
+        frauds = df.filter(df["ATO_FRAUD"] == 1).count()
+        print(f"{name} set: total={total:,}, frauds={frauds:,}, fraud_rate={frauds/total:.2%}")
+
+    fraud_rate(train_df, "Train")
+    fraud_rate(test_df, "Test")
+
+    overlap = train_df.select(id_col).intersect(test_df.select(id_col)).count()
+    if overlap > 0:
+        print(f"Warning: {overlap} IDs appear in both Train and Test")
+    else:
+        print("No ID overlap between Train and Test")
+
+    return train_df, test_df
+
+
 from snowflake.snowpark import functions as F, Window
 
 def balanced_split_unique_ids(input_table: str, output_base: str, id_col: str, train_frac: float = 0.6):
