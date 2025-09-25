@@ -1,3 +1,48 @@
+from snowflake.snowpark import functions as F
+
+def stratified_split_by_id(df, id_col, train_frac: float = 0.6):
+    """
+    Stratified split: ensures fraud_rate stays balanced in train and test sets.
+    Splits fraud and non-fraud populations separately, then combines them.
+    """
+
+    # Split fraud and non-fraud
+    fraud_df = df.filter(df["ATO_FRAUD"] == 1).with_column("rand_val", F.random())
+    nonfraud_df = df.filter(df["ATO_FRAUD"] == 0).with_column("rand_val", F.random())
+
+    # Train/Test for frauds
+    fraud_train = fraud_df.filter(F.col("rand_val") <= train_frac)
+    fraud_test  = fraud_df.filter(F.col("rand_val") >  train_frac)
+
+    # Train/Test for nonfrauds
+    nonfraud_train = nonfraud_df.filter(F.col("rand_val") <= train_frac)
+    nonfraud_test  = nonfraud_df.filter(F.col("rand_val") >  train_frac)
+
+    # Combine back
+    train_df = fraud_train.union_all(nonfraud_train).drop("rand_val")
+    test_df  = fraud_test.union_all(nonfraud_test).drop("rand_val")
+
+    # Report fraud rates
+    def fraud_rate(df, name):
+        total = df.count()
+        frauds = df.filter(df["ATO_FRAUD"] == 1).count()
+        print(f"{name} set: total={total:,}, frauds={frauds:,}, fraud_rate={frauds/total:.2%}")
+
+    fraud_rate(train_df, "Train")
+    fraud_rate(test_df, "Test")
+
+    return train_df, test_df
+
+df = session.sql("SELECT * FROM PBNKEZ250.EZ250.FAM_V3_TRAIN_DIGITAL_FINAL_DOWNSAMPLED")
+
+train_df, test_df = stratified_split_by_id(
+    df, id_col="USAA_PARTY_PD_ID", train_frac=0.6
+)
+
+train_df.write.save_as_table("PBNKEZ250.EZ250.FAM_V3_DIGITAL_TRAIN", mode="overwrite")
+test_df.write.save_as_table("PBNKEZ250.EZ250.FAM_V3_DIGITAL_TEST", mode="overwrite")
+
+
 df = session.sql("SELECT * FROM PBNKEZ250.EZ250.FAM_V3_TRAIN_DIGITAL_FINAL")
 
 fraud_df = df.filter(df["ATO_FRAUD"] == 1)
