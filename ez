@@ -1,4 +1,363 @@
 # ===============================
+# Multi-Segment Fraud Model Pipeline (Final End-to-End)
+# ===============================
+import numpy as np
+import pandas as pd
+import pickle, os, zipfile
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
+from xgboost import XGBClassifier
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score, confusion_matrix,
+    roc_curve, auc, precision_recall_curve,
+    average_precision_score
+)
+from matplotlib.backends.backend_pdf import PdfPages
+from PyPDF2 import PdfMerger
+
+timestamp = datetime.now().strftime("%Y%m%d")
+segments = ["telephone", "internet", "email"]   # ✅ update as needed
+
+# ===============================
+# Helper Functions
+# ===============================
+def evaluate(y_true, y_pred, y_proba, split="Test"):
+    return {
+        "Split": split,
+        "Accuracy": accuracy_score(y_true, y_pred),
+        "Precision": precision_score(y_true, y_pred, zero_division=0),
+        "Recall": recall_score(y_true, y_pred, zero_division=0),
+        "F1": f1_score(y_true, y_pred, zero_division=0),
+        "ROC_AUC": roc_auc_score(y_true, y_proba),
+        "PR_AUC": average_precision_score(y_true, y_proba)
+    }
+
+def ks_table(y_true, y_proba, n_bins=20):
+    df = pd.DataFrame({"y": y_true, "score": y_proba})
+    df = df.sort_values("score", ascending=False).reset_index(drop=True)
+    df["bin"] = pd.qcut(df["score"], q=n_bins, duplicates="drop")
+    grouped = df.groupby("bin", observed=True).agg(
+        min_score=("score","min"),
+        max_score=("score","max"),
+        events=("y","sum"),
+        nonevents=("y", lambda x: (x==0).sum())
+    ).reset_index(drop=True)
+    grouped["event_rate"] = grouped["events"]/grouped["events"].sum()
+    grouped["nonevent_rate"] = grouped["nonevents"]/grouped["nonevents"].sum()
+    grouped["cum_event_rate"] = grouped["event_rate"].cumsum()
+    grouped["cum_nonevent_rate"] = grouped["nonevent_rate"].cumsum()
+    grouped["ks"] = (grouped["cum_event_rate"]-grouped["cum_nonevent_rate"]).abs()
+    ks_stat = grouped["ks"].max()
+    return grouped, ks_stat
+
+def save_confusion_matrix(y_true, y_pred, segment, split):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(5,4))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
+    plt.title(f"{split} Confusion Matrix ({segment})")
+    plt.xlabel("Predicted"); plt.ylabel("Actual")
+    path = f"confusion_matrix_{split.lower()}_{segment}_{timestamp}.png"
+    plt.savefig(path, dpi=300, bbox_inches="tight"); plt.close()
+    return path
+
+def save_roc_curve(y_true, y_proba, segment, split):
+    fpr, tpr, _ = roc_curve(y_true, y_proba)
+    roc_auc = auc(fpr, tpr)
+    plt.figure()
+    plt.plot(fpr, tpr, label=f"AUC={roc_auc:.3f}")
+    plt.plot([0,1],[0,1],"k--")
+    plt.title(f"{split} ROC Curve ({segment})")
+    plt.xlabel("FPR"); plt.ylabel("TPR")
+    plt.legend(loc="lower right")
+    path = f"roc_curve_{split.lower()}_{segment}_{timestamp}.png"
+    plt.savefig(path, dpi=300, bbox_inches="tight"); plt.close()
+    return path
+
+def save_pr_curve(y_true, y_proba, segment, split):
+    precision, recall, _ = precision_recall_curve(y_true, y_proba)
+    pr_auc = average_precision_score(y_true, y_proba)
+    plt.figure()
+    plt.plot(rec, precision, label=f"PR AUC={pr_auc:.3f}")
+    plt.title(f"{split} PR Curve ({segment})")
+    plt.xlabel("Recall"); plt.ylabel("Precision")
+    plt.legend(loc="lower left")
+    path = f"pr_curve_{split.lower()}_{segment}_{timestamp}.png"
+    plt.savefig(path, dpi=300, bbox_inches="tight"); plt.close()
+    return path
+
+def save_ks_curve(ks_df, ks_stat, segment, split="Test"):
+    plt.figure()
+    plt.plot(ks_df["cum_event_rate"], label="Cumulative Event Rate")
+    plt.plot(ks_df["cum_nonevent_rate"], label="Cumulative Non-Event Rate")
+    plt.fill_between(range(len(ks_df)), ks_df["cum_event_rate"], ks_df["cum_nonevent_rate"], alpha=0.2)
+    plt.title(f"{split} KS Curve ({segment}) - KS={ks_stat:.3f}")
+    plt.xlabel("Score Bin")
+    plt.ylabel("Cumulative Rate")
+    plt.legend(loc="best")
+    path = f"ks_curve_{split.lower()}_{segment}_{timestamp}.png"
+    plt.savefig(path, dpi=300, bbox_inches="tight"); plt.close()
+    return path
+
+def save_exec_summary_pdf(
+    segment, best_params, y_true_test, y_pred_test, y_proba_test,
+    y_true_train, y_pred_train, y_proba_train, ks_df, ks_stat, timestamp
+):
+    def quick_metrics(y_true, y_pred, y_proba):
+        return dict(
+            acc=accuracy_score(y_true, y_pred),
+            prec=precision_score(y_true, y_pred, zero_division=0),
+            rec=recall_score(y_true, y_pred, zero_division=0),
+            f1=f1_score(y_true, y_pred, zero_division=0),
+            roc=roc_auc_score(y_true, y_proba),
+            pr=average_precision_score(y_true, y_proba)
+        )
+    m_test  = quick_metrics(y_true_test,  y_pred_test,  y_proba_test)
+    m_train = quick_metrics(y_true_train, y_pred_train, y_proba_train)
+    fpr, tpr, _ = roc_curve(y_true_test, y_proba_test)
+    prec, rec, _ = precision_recall_curve(y_true_test, y_proba_test)
+    pdf_path = f"exec_summary_{segment}_{timestamp}.pdf"
+    with PdfPages(pdf_path) as pdf:
+        fig = plt.figure(figsize=(11, 8.5))
+        gs = fig.add_gridspec(3, 4, height_ratios=[0.9, 1.6, 1.6], hspace=0.8, wspace=0.7)
+        ax_header = fig.add_subplot(gs[0, :]); ax_header.axis("off")
+        header_lines = [
+            f"{segment.title()} Fraud Model — Executive Summary ({timestamp})",
+            f"Test:  Acc {m_test['acc']:.3f} | Prec {m_test['prec']:.3f} | Rec {m_test['rec']:.3f} | F1 {m_test['f1']:.3f} | ROC AUC {m_test['roc']:.3f} | PR AUC {m_test['pr']:.3f}",
+            f"Train: Acc {m_train['acc']:.3f} | Prec {m_train['prec']:.3f} | Rec {m_train['rec']:.3f} | F1 {m_train['f1']:.3f} | ROC AUC {m_train['roc']:.3f} | PR AUC {m_train['pr']:.3f}",
+            f"Max KS (Test): {ks_stat:.3f}",
+            f"Best Params: {best_params}"
+        ]
+        ax_header.text(0.01, 0.95, header_lines[0], fontsize=16, fontweight="bold", va="top")
+        ax_header.text(0.01, 0.75, "\n".join(header_lines[1:]), fontsize=11, va="top")
+        ax_cm = fig.add_subplot(gs[1, 0:2])
+        cm = confusion_matrix(y_true_test, y_pred_test)
+        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax_cm)
+        ax_cm.set_title("Confusion Matrix (Test)")
+        ax_cm.set_xlabel("Predicted"); ax_cm.set_ylabel("Actual")
+        ax_roc = fig.add_subplot(gs[1, 2:4])
+        ax_roc.plot(fpr, tpr, label=f"AUC={auc(fpr,tpr):.3f}")
+        ax_roc.plot([0,1], [0,1], "k--"); ax_roc.set_title("ROC Curve (Test)")
+        ax_pr = fig.add_subplot(gs[2, 0:2])
+        ax_pr.plot(rec, prec, label=f"PR AUC={average_precision_score(y_true_test, y_proba_test):.3f}")
+        ax_pr.set_title("Precision–Recall Curve (Test)")
+        ax_ks = fig.add_subplot(gs[2, 2:4])
+        ax_ks.plot(ks_df["cum_event_rate"].values, label="Cum Event Rate")
+        ax_ks.plot(ks_df["cum_nonevent_rate"].values, label="Cum Non-Event Rate")
+        ax_ks.fill_between(range(len(ks_df)), ks_df["cum_event_rate"].values, ks_df["cum_nonevent_rate"].values, alpha=0.2)
+        ax_ks.set_title(f"KS Curve (Test) — KS={ks_stat:.3f}")
+        pdf.savefig(fig, bbox_inches="tight"); plt.close(fig)
+    return pdf_path
+
+# ===============================
+# Main Loop Over Segments
+# ===============================
+all_segments_perf, all_segments_features, all_segments_ks = [], {}, {}
+ks_summary, all_exec_pdfs = [], []
+
+for segment in segments:
+    print(f"\n🚀 Processing segment: {segment.upper()}")
+
+    # 1. Load train & test sets
+    train_df = session.sql(f"SELECT * FROM PBNKEZ250.EZ250.FAM_V3_{segment.upper()}_TRAIN")
+    test_df  = session.sql(f"SELECT * FROM PBNKEZ250.EZ250.FAM_V3_{segment.upper()}_TEST")
+    train_pd = train_df.to_pandas(statement_params={'ROWS_PER_RESULTSET': 0})
+    test_pd  = test_df.to_pandas(statement_params={'ROWS_PER_RESULTSET': 0})
+
+    # 2. Clean features
+    drop_cols = ['FRAUD','ATO_FRAUD','USAA_PARTY_PD_ID','PRINCIPLE_PARTY_PD_ID']
+    y_train = train_pd['ATO_FRAUD']; y_test  = test_pd['ATO_FRAUD']
+    X_train = train_pd.drop(columns=drop_cols, errors='ignore').select_dtypes(include=[np.number])
+    X_test  = test_pd.drop(columns=drop_cols, errors='ignore').select_dtypes(include=[np.number])
+    feature_stats = pd.DataFrame({
+        "feature": X_train.columns,
+        "missing_pct": X_train.isnull().mean()*100,
+        "zero_pct": (X_train==0).mean()*100,
+        "n_unique": X_train.nunique()
+    })
+    drop_features = feature_stats[
+        (feature_stats['missing_pct']==100) |
+        (feature_stats['zero_pct']==100) |
+        (feature_stats['n_unique']<=1)
+    ]['feature'].tolist()
+    X_train = X_train.drop(columns=drop_features).fillna(0)
+    X_test  = X_test.drop(columns=drop_features).fillna(0)
+
+    # 3. Baseline model → top 200
+    scale_pos_weight = (y_train==0).sum()/(y_train==1).sum()
+    baseline = XGBClassifier(
+        objective="binary:logistic", eval_metric="aucpr",
+        scale_pos_weight=scale_pos_weight, use_label_encoder=False,
+        n_estimators=300, max_depth=6, learning_rate=0.1, random_state=42
+    )
+    baseline.fit(X_train, y_train)
+    feat_imp = pd.DataFrame({"feature": X_train.columns, "importance": baseline.feature_importances_})
+    feat_summary = feat_imp.merge(feature_stats, on="feature", how="left")
+    top200 = feat_summary.sort_values("importance", ascending=False).head(200)
+    X_train_top = X_train[top200['feature']]; X_test_top = X_test[top200['feature']]
+
+    # 4. Correlation pruning
+    corr = X_train_top.corr().abs(); upper = corr.where(np.triu(np.ones(corr.shape),k=1).astype(bool))
+    importance_map = dict(zip(top200['feature'], top200['importance'])); to_drop = []
+    for col in upper.columns:
+        high_corr = [row for row in upper.index if upper.loc[row,col]>0.90]
+        for row in high_corr:
+            if importance_map.get(row,0)<importance_map.get(col,0): to_drop.append(row)
+            else: to_drop.append(col)
+    to_drop = list(set(to_drop))
+    X_train_pruned = X_train_top.drop(columns=to_drop, errors="ignore")
+    X_test_pruned  = X_test_top.drop(columns=to_drop, errors="ignore")
+
+    # 5. Hyperparameter tuning
+    xgb_clf = XGBClassifier(objective="binary:logistic", eval_metric="aucpr",
+        scale_pos_weight=scale_pos_weight, use_label_encoder=False, random_state=42)
+    param_dist = {
+        "n_estimators":[200,300,500],
+        "max_depth":[4,6,8,10],
+        "learning_rate":[0.01,0.05,0.1,0.2],
+        "subsample":[0.6,0.8,1.0],
+        "colsample_bytree":[0.6,0.8,1.0],
+        "min_child_weight":[1,3,5],
+        "gamma":[0,0.25,0.5,1]
+    }
+    search = RandomizedSearchCV(
+        estimator=xgb_clf, param_distributions=param_dist,
+        n_iter=20, scoring="roc_auc", cv=3, random_state=42, n_jobs=-1
+    )
+    search.fit(X_train_pruned, y_train)
+    best_xgb = XGBClassifier(**search.best_params_, objective="binary:logistic",
+        eval_metric="aucpr", scale_pos_weight=scale_pos_weight,
+        use_label_encoder=False, random_state=42)
+    best_xgb.fit(X_train_pruned,y_train,eval_set=[(X_test_pruned,y_test)], verbose=False, early_stopping_rounds=30)
+
+    # 6. Evaluate
+    y_pred_train = best_xgb.predict(X_train_pruned); y_proba_train = best_xgb.predict_proba(X_train_pruned)[:,1]
+    y_pred_test  = best_xgb.predict(X_test_pruned);  y_proba_test  = best_xgb.predict_proba(X_test_pruned)[:,1]
+    perf_df = pd.DataFrame([
+        evaluate(y_train,y_pred_train,y_proba_train,"Train"),
+        evaluate(y_test,y_pred_test,y_proba_test,"Test")
+    ]); perf_df["Segment"] = segment
+    all_segments_perf.append(perf_df)
+
+    # KS
+    ks_df, ks_stat = ks_table(y_test, y_proba_test, n_bins=20)
+    ks_df["Segment"] = segment; ks_df["Max_KS"] = ks_stat
+    all_segments_ks[segment] = ks_df; ks_summary.append({"Segment": segment, "Max_KS": ks_stat})
+    ks_png = save_ks_curve(ks_df, ks_stat, segment, split="Test")
+
+    # Features
+    feat_final = pd.DataFrame({
+        "feature":X_train_pruned.columns,
+        "importance":best_xgb.feature_importances_
+    }).merge(feature_stats,on="feature",how="left").sort_values("importance",ascending=False)
+    all_segments_features[segment] = feat_final
+
+    # Paths
+    csv_path   = f"final_features_{segment}_with_stats_{timestamp}.csv"
+    excel_path = f"final_features_{segment}_with_stats_{timestamp}.xlsx"
+    pickle_path= f"xgb_model_{segment}_{timestamp}.pkl"
+    readme_path= f"readme_{segment}_{timestamp}.txt"
+    zip_path   = f"{segment}_model_artifacts_{timestamp}.zip"
+
+    # Save feature stats Excel
+    feat_final.to_csv(csv_path,index=False)
+    with pd.ExcelWriter(excel_path,engine="xlsxwriter") as writer:
+        feat_final.to_excel(writer,"Top Features",index=False)
+        pd.DataFrame({"dropped_features":drop_features}).to_excel(writer,"Dropped Features",index=False)
+        pd.DataFrame({"correlated_dropped":to_drop}).to_excel(writer,"Correlated Features",index=False)
+        perf_df.to_excel(writer,"Performance",index=False)
+        ks_df.to_excel(writer,"KS Table",index=False)
+
+    # Save model
+    with open(pickle_path,"wb") as f: pickle.dump(best_xgb,f)
+
+    # README
+    ks_png_name = os.path.basename(ks_png)
+    readme = f"""
+{segment.title()} Model Artifacts - {timestamp}
+
+Key Validation Metric
+---------------------
+• KS (Test): {ks_stat:.3f}
+• KS Curve PNG: {ks_png_name}
+
+Files
+-----
+• Features CSV/Excel with stats
+• Trained model Pickle
+• Confusion, ROC, PR, KS plots
+• Executive Summary PDF
+
+Scoring Example
+---------------
+>>> import pickle, pandas as pd
+>>> with open("xgb_model_{segment}_{timestamp}.pkl", "rb") as f:
+>>>     model = pickle.load(f)
+>>> new_df = pd.read_csv("new_{segment}_data.csv")
+>>> new_df = new_df[model.get_booster().feature_names]
+>>> probs = model.predict_proba(new_df)[:,1]
+>>> new_df["fraud_probability"] = probs
+>>> new_df["fraud_flag"] = (probs > 0.5).astype(int)
+>>> new_df.to_csv("scored_{segment}_data.csv", index=False)
+"""
+    with open(readme_path,"w") as f: f.write(readme)
+
+    # Exec PDF
+    exec_pdf = save_exec_summary_pdf(
+        segment=segment,
+        best_params=search.best_params_,
+        y_true_test=y_test,  y_pred_test=y_pred_test,  y_proba_test=y_proba_test,
+        y_true_train=y_train, y_pred_train=y_pred_train, y_proba_train=y_proba_train,
+        ks_df=ks_df, ks_stat=ks_stat, timestamp=timestamp
+    ); all_exec_pdfs.append(exec_pdf)
+
+    # PNG plots
+    pngs = [
+        save_confusion_matrix(y_train,y_pred_train,segment,"Train"),
+        save_confusion_matrix(y_test,y_pred_test,segment,"Test"),
+        save_roc_curve(y_train,y_proba_train,segment,"Train"),
+        save_roc_curve(y_test,y_proba_test,segment,"Test"),
+        save_pr_curve(y_train,y_proba_train,segment,"Train"),
+        save_pr_curve(y_test,y_proba_test,segment,"Test"),
+        ks_png
+    ]
+
+    # Zip
+    with zipfile.ZipFile(zip_path,"w",zipfile.ZIP_DEFLATED) as zipf:
+        for fpath in [csv_path, excel_path, pickle_path, readme_path, exec_pdf] + pngs:
+            zipf.write(fpath, os.path.basename(fpath))
+
+    print(f"✅ Completed {segment.upper()}, KS={ks_stat:.3f}, artifacts saved to {zip_path}")
+
+# ===============================
+# Master Summary Excel
+# ===============================
+master_perf = pd.concat(all_segments_perf, ignore_index=True)
+ks_summary_df = pd.DataFrame(ks_summary)
+master_perf = master_perf.merge(ks_summary_df, on="Segment", how="left")
+master_excel = f"all_segments_performance_summary_{timestamp}.xlsx"
+with pd.ExcelWriter(master_excel, engine="xlsxwriter") as writer:
+    master_perf.to_excel(writer, "Performance Summary", index=False)
+    for seg, feat_df in all_segments_features.items():
+        feat_df.to_excel(writer, f"{seg.title()} Features", index=False)
+    for seg, ks_df in all_segments_ks.items():
+        ks_df.to_excel(writer, f"{seg.title()} KS", index=False)
+print(f"\n📊 Master summary saved: {master_excel}")
+
+# ===============================
+# Bundle Exec PDFs into one
+# ===============================
+merged_pdf = f"all_segments_exec_summary_{timestamp}.pdf"
+merger = PdfMerger()
+for pdf in all_exec_pdfs: merger.append(pdf)
+merger.write(merged_pdf); merger.close()
+print(f"📑 Master exec PDF saved: {merged_pdf}")
+
+
+
+# ===============================
 # 1. Load train & test sets
 # ===============================
 train_df = session.sql("SELECT * FROM PBNKEZ250.EZ250.FAM_V3_TELEPHONE_TRAIN")
