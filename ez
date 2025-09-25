@@ -1,3 +1,29 @@
+# Load the final telephone training table
+df = session.sql("SELECT * FROM PBNKEZ250.EZ250.FAM_V3_TRAIN_TELEPHONE_FINAL")
+
+# Split into fraud and non-fraud
+fraud_df = df.filter(df["ATO_FRAUD"] == 1)
+nonfraud_df = df.filter(df["ATO_FRAUD"] == 0)
+
+# Count fraud rows
+fraud_count = fraud_df.count()
+
+# Randomly sample non-fraud to match fraud count
+nonfraud_sample = nonfraud_df.sample(fraction=fraud_count / nonfraud_df.count(), seed=42)
+
+# Combine and shuffle
+balanced_df = fraud_df.union_all(nonfraud_sample)
+balanced_df = balanced_df.with_column("rand_val", F.random()).sort(F.col("rand_val")).drop("rand_val")
+
+# Save balanced version into a new table
+balanced_df.write.save_as_table(
+    "PBNKEZ250.EZ250.FAM_V3_TRAIN_TELEPHONE_FINAL_DOWNSAMPLED", 
+    mode="overwrite"
+)
+
+print("✅ Balanced table created: PBNKEZ250.EZ250.FAM_V3_TRAIN_TELEPHONE_FINAL_DOWNSAMPLED")
+
+
 # ===============================
 # Multi-Segment Fraud Model Pipeline (Final End-to-End)
 # ===============================
