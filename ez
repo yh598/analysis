@@ -1,5 +1,68 @@
 from snowflake.snowpark import functions as F, Window
 
+def stratified_split_unique_ids(input_table: str, output_base: str, id_col: str, train_frac: float = 0.6):
+    """
+    Stratified split at the ID level.
+    Ensures:
+      - No ID overlap between Train and Test
+      - Train and Test have the same fraud rate
+    """
+
+    # Load input
+    df = session.sql(f"SELECT * FROM {input_table}")
+
+    def split_ids(group_df, train_frac):
+        ids = group_df.select(id_col).distinct().with_column("rand_val", F.random())
+        total = ids.count()
+        cutoff = int(total * train_frac)
+
+        w = Window.order_by("rand_val")
+        ids = ids.with_column("row_num", F.row_number().over(w))
+        train_ids = ids.filter(F.col("row_num") <= cutoff).drop("row_num")
+        test_ids  = ids.filter(F.col("row_num") >  cutoff).drop("row_num")
+
+        return train_ids, test_ids
+
+    # Fraud IDs
+    fraud_ids_train, fraud_ids_test = split_ids(df.filter(df["ATO_FRAUD"] == 1), train_frac)
+
+    # Nonfraud IDs
+    nonfraud_ids_train, nonfraud_ids_test = split_ids(df.filter(df["ATO_FRAUD"] == 0), train_frac)
+
+    # Join back to original rows
+    train_ids = fraud_ids_train.union_all(nonfraud_ids_train)
+    test_ids  = fraud_ids_test.union_all(nonfraud_ids_test)
+
+    train_df = df.join(train_ids, id_col)
+    test_df  = df.join(test_ids,  id_col)
+
+    # Save
+    train_out = f"{output_base}_TRAIN"
+    test_out  = f"{output_base}_TEST"
+    train_df.write.save_as_table(train_out, mode="overwrite")
+    test_df.write.save_as_table(test_out, mode="overwrite")
+
+    # Print stats
+    def fraud_rate(df, name):
+        total = df.count()
+        frauds = df.filter(df["ATO_FRAUD"] == 1).count()
+        print(f"{name} set: total={total:,}, frauds={frauds:,}, fraud_rate={frauds/total:.2%}")
+
+    fraud_rate(train_df, "Train")
+    fraud_rate(test_df, "Test")
+
+    # Verify no overlap
+    overlap = train_df.select(id_col).intersect(test_df.select(id_col)).count()
+    if overlap > 0:
+        print(f"Warning: {overlap} IDs appear in both Train and Test")
+    else:
+        print("No ID overlap between Train and Test")
+
+    return train_df, test_df
+
+
+from snowflake.snowpark import functions as F, Window
+
 def split_and_save_unique_ids(input_table: str, output_base: str, id_col: str, train_frac: float = 0.6):
     """
     Split at the ID level so each ID belongs to only one set.
