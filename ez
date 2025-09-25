@@ -1,3 +1,211 @@
+# ===============================
+# 1. Load train & test sets
+# ===============================
+train_df = session.sql("SELECT * FROM PBNKEZ250.EZ250.FAM_V3_TELEPHONE_TRAIN")
+test_df  = session.sql("SELECT * FROM PBNKEZ250.EZ250.FAM_V3_TELEPHONE_TEST")
+
+# Convert to pandas
+train_pd = train_df.to_pandas(statement_params={'ROWS_PER_RESULTSET': 0})
+test_pd  = test_df.to_pandas(statement_params={'ROWS_PER_RESULTSET': 0})
+
+print(f"Train shape: {train_pd.shape}, Test shape: {test_pd.shape}")
+
+# ===============================
+# 2. Clean features
+# ===============================
+import numpy as np
+import pandas as pd
+
+# Label and ID columns
+drop_cols = ['FRAUD', 'ATO_FRAUD', 'USAA_PARTY_PD_ID', 'PRINCIPLE_PARTY_PD_ID']  
+
+X_train = train_pd.drop(columns=drop_cols, errors='ignore')
+y_train = train_pd['ATO_FRAUD']
+
+X_test = test_pd.drop(columns=drop_cols, errors='ignore')
+y_test = test_pd['ATO_FRAUD']
+
+# Only numeric features
+numeric_cols = X_train.select_dtypes(include=[np.number]).columns.tolist()
+X_train = X_train[numeric_cols]
+X_test  = X_test[numeric_cols]
+
+# Feature stats
+feature_stats = pd.DataFrame({
+    "feature": numeric_cols,
+    "missing_pct": X_train.isnull().mean() * 100,
+    "zero_pct": (X_train == 0).mean() * 100,
+    "n_unique": X_train.nunique()
+})
+
+# Drop features that are useless
+drop_features = feature_stats[
+    (feature_stats['missing_pct'] == 100) |
+    (feature_stats['zero_pct'] == 100) |
+    (feature_stats['n_unique'] <= 1)
+]['feature'].tolist()
+
+print(f"Dropping {len(drop_features)} features")
+X_train = X_train.drop(columns=drop_features)
+X_test  = X_test.drop(columns=drop_features)
+
+# Impute missing
+X_train = X_train.fillna(0)
+X_test  = X_test.fillna(0)
+
+# ===============================
+# 3. Train initial XGBoost to get top 200 features
+# ===============================
+from xgboost import XGBClassifier
+
+scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
+
+baseline_model = XGBClassifier(
+    objective="binary:logistic",
+    eval_metric="aucpr",
+    scale_pos_weight=scale_pos_weight,
+    use_label_encoder=False,
+    n_estimators=300,
+    max_depth=6,
+    learning_rate=0.1,
+    random_state=42
+)
+
+baseline_model.fit(X_train, y_train)
+
+# Feature importances
+importances = baseline_model.feature_importances_
+feat_imp_df = pd.DataFrame({
+    "feature": X_train.columns,
+    "importance": importances
+})
+
+# Merge with stats
+feat_summary = feat_imp_df.merge(feature_stats, on="feature", how="left")
+top200 = feat_summary.sort_values("importance", ascending=False).head(200)
+
+# Restrict dataset to top200
+top200_features = top200['feature'].tolist()
+X_train_top = X_train[top200_features]
+X_test_top  = X_test[top200_features]
+
+print(f"Using top {len(top200_features)} features")
+
+# ===============================
+# 4. Hyperparameter tuning
+# ===============================
+from sklearn.model_selection import RandomizedSearchCV
+
+xgb_clf = XGBClassifier(
+    objective="binary:logistic",
+    eval_metric="aucpr",
+    scale_pos_weight=scale_pos_weight,
+    use_label_encoder=False,
+    random_state=42
+)
+
+param_dist = {
+    "n_estimators": [200, 300, 500],
+    "max_depth": [4, 6, 8, 10],
+    "learning_rate": [0.01, 0.05, 0.1, 0.2],
+    "subsample": [0.6, 0.8, 1.0],
+    "colsample_bytree": [0.6, 0.8, 1.0],
+    "min_child_weight": [1, 3, 5],
+    "gamma": [0, 0.25, 0.5, 1]
+}
+
+random_search = RandomizedSearchCV(
+    estimator=xgb_clf,
+    param_distributions=param_dist,
+    n_iter=20,
+    scoring="roc_auc",
+    cv=3,
+    verbose=2,
+    random_state=42,
+    n_jobs=-1
+)
+
+random_search.fit(X_train_top, y_train)
+
+print("Best Params:", random_search.best_params_)
+print("Best CV Score:", random_search.best_score_)
+
+# ===============================
+# 5. Final model with early stopping
+# ===============================
+best_xgb = XGBClassifier(
+    **random_search.best_params_,
+    objective="binary:logistic",
+    eval_metric="aucpr",
+    scale_pos_weight=scale_pos_weight,
+    use_label_encoder=False,
+    random_state=42
+)
+
+best_xgb.fit(
+    X_train_top, y_train,
+    eval_set=[(X_test_top, y_test)],
+    verbose=False,
+    early_stopping_rounds=30
+)
+
+# ===============================
+# 6. Evaluate performance
+# ===============================
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score, confusion_matrix, classification_report
+)
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def evaluate(y_true, y_pred, y_proba, split="Test"):
+    acc  = accuracy_score(y_true, y_pred)
+    prec = precision_score(y_true, y_pred, zero_division=0)
+    rec  = recall_score(y_true, y_pred, zero_division=0)
+    f1   = f1_score(y_true, y_pred, zero_division=0)
+    auc  = roc_auc_score(y_true, y_proba)
+
+    print(f"\n📊 {split} Performance")
+    print(f"Accuracy   : {acc:.3f}")
+    print(f"Precision  : {prec:.3f}")
+    print(f"Recall     : {rec:.3f}")
+    print(f"F1-score   : {f1:.3f}")
+    print(f"ROC AUC    : {auc:.3f}")
+    print(classification_report(y_true, y_pred, digits=3))
+
+    cm = confusion_matrix(y_true, y_pred)
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
+    plt.title(f"{split} Confusion Matrix")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.show()
+
+# Train & Test predictions
+y_pred_train = best_xgb.predict(X_train_top)
+y_proba_train = best_xgb.predict_proba(X_train_top)[:,1]
+
+y_pred_test = best_xgb.predict(X_test_top)
+y_proba_test = best_xgb.predict_proba(X_test_top)[:,1]
+
+evaluate(y_train, y_pred_train, y_proba_train, split="Train")
+evaluate(y_test, y_pred_test, y_proba_test, split="Test")
+
+# ===============================
+# 7. Save top200 feature summary
+# ===============================
+importances = best_xgb.feature_importances_
+feat_imp_df = pd.DataFrame({
+    "feature": X_train_top.columns,
+    "importance": importances
+})
+feat_summary = feat_imp_df.merge(feature_stats, on="feature", how="left")
+top200_final = feat_summary.sort_values("importance", ascending=False).head(200)
+
+top200_final.to_csv("top200_features_with_stats.csv", index=False)
+print("Saved top200_features_with_stats.csv")
+
+
 import pandas as pd
 import numpy as np
 
