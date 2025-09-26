@@ -1,3 +1,186 @@
+import numpy as np
+import pandas as pd
+import shap
+import xgboost as xgb
+import pickle
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+# ------------------------
+# Config
+# ------------------------
+timestamp = datetime.now().strftime("%Y%m%d")
+segments = ["telephone"]
+
+all_segments_perf, all_segments_features, all_segments_ks = [], {}, []
+
+for segment in segments:
+    # ------------------------
+    # Load Train/Test Sets
+    # ------------------------
+    train_df = session.sql(f"""
+        SELECT * 
+        FROM PBNKEZ56.EZ256.FAM_V3_{segment.upper()}_TRAIN
+    """).to_pandas()
+
+    test_df = session.sql(f"""
+        SELECT * 
+        FROM PBNKEZ56.EZ256.FAM_V3_{segment.upper()}_TEST
+    """).to_pandas()
+
+    y_train = train_df["ATO_FRAUD"]
+    y_test = test_df["ATO_FRAUD"]
+
+    X_train = train_df.drop(columns=["ATO_FRAUD", "USAA_PARTY_PO_ID",
+                                     "PRINCIPLE_PARTY_PO_ID", "DSM_SCR_DESTI_SK",
+                                     "DSM_SCR_DESTI_SC"])
+    X_test = test_df.drop(columns=["ATO_FRAUD", "USAA_PARTY_PO_ID",
+                                   "PRINCIPLE_PARTY_PO_ID", "DSM_SCR_DESTI_SK",
+                                   "DSM_SCR_DESTI_SC"])
+
+    # ------------------------
+    # Feature Stats + Dropping
+    # ------------------------
+    feature_stats = pd.DataFrame({
+        "feature": X_train.columns,
+        "missing_pct": X_train.isnull().mean() * 100,
+        "zero_pct": (X_train == 0).mean() * 100,
+        "n_unique": X_train.nunique()
+    })
+
+    drop_features = feature_stats[
+        (feature_stats["missing_pct"] >= 100) |
+        (feature_stats["zero_pct"] >= 100) |
+        (feature_stats["n_unique"] <= 1)
+    ]["feature"].tolist()
+
+    X_train = X_train.drop(columns=drop_features).fillna(0)
+    X_test = X_test.drop(columns=drop_features).fillna(0)
+
+    # ------------------------
+    # Baseline XGB + SHAP
+    # ------------------------
+    scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
+
+    baseline = xgb.XGBClassifier(
+        objective="binary:logistic",
+        eval_metric="aucpr",
+        scale_pos_weight=scale_pos_weight,
+        use_label_encoder=False,
+        n_estimators=300,
+        max_depth=6,
+        learning_rate=0.1,
+        random_state=42
+    )
+    baseline.fit(X_train, y_train)
+
+    # SHAP values
+    explainer = shap.TreeExplainer(baseline)
+    sample_idx = np.random.choice(len(X_train), min(10000, len(X_train)), replace=False)
+    shap_values = explainer.shap_values(X_train.iloc[sample_idx])
+
+    shap_importance = np.abs(shap_values).mean(axis=0)
+    feat_imp = pd.DataFrame({
+        "feature": X_train.columns,
+        "importance": shap_importance
+    })
+
+    # ------------------------
+    # Select Top 200 by SHAP
+    # ------------------------
+    top200 = feat_imp.sort_values("importance", ascending=False).head(200)
+    X_train_top = X_train[top200["feature"]]
+    X_test_top = X_test[top200["feature"]]
+
+    # ------------------------
+    # Correlation Pruning
+    # ------------------------
+    corr = X_train_top.corr().abs()
+    upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+
+    to_drop = [col for col in upper.columns if any(upper[col] > 0.90)]
+
+    X_train_pruned = X_train_top.drop(columns=to_drop, errors="ignore")
+    X_test_pruned = X_test_top.drop(columns=to_drop, errors="ignore")
+
+    # ------------------------
+    # Train Final Model
+    # ------------------------
+    best_xgb = xgb.XGBClassifier(
+        objective="binary:logistic",
+        eval_metric="aucpr",
+        scale_pos_weight=scale_pos_weight,
+        use_label_encoder=False,
+        n_estimators=300,
+        max_depth=6,
+        learning_rate=0.1,
+        random_state=42
+    )
+    best_xgb.fit(X_train_pruned, y_train,
+                 eval_set=[(X_test_pruned, y_test)],
+                 verbose=False, early_stopping_rounds=30)
+
+    # ------------------------
+    # Evaluate
+    # ------------------------
+    y_pred_train = best_xgb.predict(X_train_pruned)
+    y_proba_train = best_xgb.predict_proba(X_train_pruned)[:, 1]
+    y_pred_test = best_xgb.predict(X_test_pruned)
+    y_proba_test = best_xgb.predict_proba(X_test_pruned)[:, 1]
+
+    perf_df = evaluate(y_train, y_pred_train, y_proba_train, "Train")
+    perf_df = perf_df.append(evaluate(y_test, y_pred_test, y_proba_test, "Test"))
+    perf_df["Segment"] = segment
+    all_segments_perf.append(perf_df)
+
+    # ------------------------
+    # Final Features with SHAP
+    # ------------------------
+    explainer_final = shap.TreeExplainer(best_xgb)
+    shap_values_final = explainer_final.shap_values(X_train_pruned)
+    shap_importance_final = np.abs(shap_values_final).mean(axis=0)
+
+    feat_final = pd.DataFrame({
+        "feature": X_train_pruned.columns,
+        "importance": shap_importance_final
+    }).merge(feature_stats, on="feature", how="left") \
+      .sort_values("importance", ascending=False)
+
+    all_segments_features[segment] = feat_final
+
+    # ------------------------
+    # Save Outputs
+    # ------------------------
+    csv_path = f"final_features_{segment}_with_stats_{timestamp}.csv"
+    excel_path = f"final_features_{segment}_with_stats_{timestamp}.xlsx"
+    pkl_path = f"{segment}_model_{timestamp}.pkl"
+
+    feat_final.to_csv(csv_path, index=False)
+    with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
+        feat_final.to_excel(writer, "Top Features", index=False)
+        pd.DataFrame({"Dropped Features": drop_features}).to_excel(writer, "Dropped Features", index=False)
+        pd.DataFrame({"Correlated Features": to_drop}).to_excel(writer, "Correlated Features", index=False)
+        perf_df.to_excel(writer, "Performance", index=False)
+
+    with open(pkl_path, "wb") as f:
+        pickle.dump(best_xgb, f)
+
+    # ------------------------
+    # SHAP Plots
+    # ------------------------
+    shap.summary_plot(shap_values_final, X_train_pruned, plot_type="bar",
+                      show=False)
+    plt.title(f"SHAP Feature Importance - {segment}")
+    plt.savefig(f"shap_importance_bar_{segment}_{timestamp}.png", bbox_inches="tight")
+    plt.close()
+
+    shap.summary_plot(shap_values_final, X_train_pruned,
+                      show=False)
+    plt.title(f"SHAP Beeswarm - {segment}")
+    plt.savefig(f"shap_beeswarm_{segment}_{timestamp}.png", bbox_inches="tight")
+    plt.close()
+
+
 import shap
 
 # Fit baseline model
