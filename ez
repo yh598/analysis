@@ -1,3 +1,57 @@
+import pandas as pd
+
+timestamp = datetime.now().strftime("%Y%m%d")
+segments = ["digital"]
+
+all_segments_perf = []
+all_segments_features = []
+all_segments_ks = []
+all_exec_pdfs = []
+
+for segment in segments:
+    # Predictions
+    y_pred_train = best_xgb.predict(X_train_pruned)
+    y_proba_train = best_xgb.predict_proba(X_train_pruned)[:, 1]
+    y_pred_test = best_xgb.predict(X_test_pruned)
+    y_proba_test = best_xgb.predict_proba(X_test_pruned)[:, 1]
+
+    # Performance (your evaluate function should return a dict or dataframe row)
+    perf = evaluate(y_test, y_pred_test, y_proba_test, "Test")
+    perf["Segment"] = segment
+    all_segments_perf.append(perf)
+
+    # KS Statistic
+    ks_df, ks_stat = ks_table(y_test, y_proba_test, n_bins=20)
+    all_segments_ks.append({"Segment": segment, "Max_KS": ks_stat})
+
+    # Features importance
+    feat_final = (
+        pd.DataFrame({
+            "feature": X_train_pruned.columns,
+            "importance": best_xgb.feature_importances_
+        })
+        .sort_values("importance", ascending=False)
+        .reset_index(drop=True)
+    )
+    feat_final["Segment"] = segment
+    all_segments_features.append(feat_final)
+
+# === Create and display summary tables ===
+perf_summary = pd.DataFrame(all_segments_perf)
+ks_summary = pd.DataFrame(all_segments_ks)
+
+print("=== Performance Summary ===")
+display(perf_summary)
+
+print("=== KS Summary ===")
+display(ks_summary)
+
+print("=== Top Features per Segment ===")
+top_features = pd.concat(all_segments_features).groupby("Segment").head(10)
+display(top_features)
+
+
+
 import builtins
 from snowflake.snowpark import functions as F, Window
 
