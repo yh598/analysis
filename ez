@@ -1,3 +1,35 @@
+import shap
+
+# Fit baseline model
+baseline = xgb.XGBClassifier(
+    objective="binary:logistic",
+    eval_metric="aucpr",
+    scale_pos_weight=scale_pos_weight,
+    use_label_encoder=False,
+    n_estimators=300,
+    max_depth=6,
+    learning_rate=0.1,
+    random_state=42
+)
+baseline.fit(X_train, y_train)
+
+# Compute SHAP values
+explainer = shap.TreeExplainer(baseline)
+shap_values = explainer.shap_values(X_train)
+
+# Calculate mean absolute SHAP importance per feature
+shap_importance = np.abs(shap_values).mean(axis=0)
+feat_imp = pd.DataFrame({
+    "feature": X_train.columns,
+    "importance": shap_importance
+})
+
+# Select top 200 features by SHAP importance
+top200 = feat_imp.sort_values("importance", ascending=False).head(200)
+X_train_top = X_train[top200["feature"]]
+X_test_top = X_test[top200["feature"]]
+
+
 import pandas as pd
 
 timestamp = datetime.now().strftime("%Y%m%d")
