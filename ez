@@ -1,5 +1,93 @@
 from xgboost import XGBClassifier
 from sklearn.model_selection import RandomizedSearchCV
+import pandas as pd
+
+# -------------------------------
+# 1. Define base model
+# -------------------------------
+xgb_clf = XGBClassifier(
+    objective="binary:logistic",
+    eval_metric="aucpr",                # focus on fraud detection PR-AUC
+    scale_pos_weight=scale_pos_weight,  # balance fraud/non-fraud
+    use_label_encoder=False,
+    random_state=42,
+    tree_method="hist"                  # faster on large data
+)
+
+# -------------------------------
+# 2. Define hyperparameter search space
+# -------------------------------
+param_dist = {
+    "n_estimators": [200, 300, 500],
+    "max_depth": [3, 4, 5, 6],
+    "learning_rate": [0.01, 0.05, 0.1],
+    "subsample": [0.6, 0.7, 0.8, 0.9],
+    "colsample_bytree": [0.6, 0.7, 0.8, 0.9],
+    "min_child_weight": [3, 5, 7],
+    "gamma": [0.5, 1, 2, 5],
+    "reg_alpha": [0.01, 0.1, 1, 5],     # L1 regularization
+    "reg_lambda": [1, 5, 10]            # L2 regularization
+}
+
+# -------------------------------
+# 3. Hyperparameter search (no early stopping here)
+# -------------------------------
+search = RandomizedSearchCV(
+    estimator=xgb_clf,
+    param_distributions=param_dist,
+    n_iter=30,
+    scoring="roc_auc",
+    cv=3,
+    random_state=42,
+    n_jobs=-1,
+    verbose=1
+)
+
+search.fit(X_train_pruned, y_train)
+
+print("Best Parameters:", search.best_params_)
+
+# -------------------------------
+# 4. Retrain with early stopping
+# -------------------------------
+best_xgb = XGBClassifier(
+    **search.best_params_,
+    objective="binary:logistic",
+    eval_metric="aucpr",
+    scale_pos_weight=scale_pos_weight,
+    use_label_encoder=False,
+    random_state=42,
+    tree_method="hist"
+)
+
+best_xgb.fit(
+    X_train_pruned, y_train,
+    eval_set=[(X_test_pruned, y_test)],
+    early_stopping_rounds=50,
+    verbose=True
+)
+
+# -------------------------------
+# 5. Evaluate model
+# -------------------------------
+y_pred_train = best_xgb.predict(X_train_pruned)
+y_proba_train = best_xgb.predict_proba(X_train_pruned)[:, 1]
+
+y_pred_test = best_xgb.predict(X_test_pruned)
+y_proba_test = best_xgb.predict_proba(X_test_pruned)[:, 1]
+
+# Custom evaluation function (yours from notebook)
+evaluate(y_train, y_pred_train, y_proba_train, "Train")
+evaluate(y_test, y_pred_test, y_proba_test, "Test")
+
+# Collect results
+perf_df = pd.DataFrame()
+perf_df = perf_df.append(evaluate(y_train, y_pred_train, y_proba_train, "Train"))
+perf_df = perf_df.append(evaluate(y_test, y_pred_test, y_proba_test, "Test"))
+
+
+from xgboost import XGBClassifier
+from sklearn.model_selection import RandomizedSearchCV
 
 # Hyperparameter tuning with stronger regularization
 xgb_clf = XGBClassifier(
