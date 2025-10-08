@@ -1,5 +1,56 @@
 from snowflake.snowpark import functions as F
 
+def split_by_id(df, id_col: str, train_frac: float = 0.6, session=None):
+    """
+    Split a Snowpark DataFrame into train and test sets by unique ID, 
+    ensuring zero overlap. Uses Snowflake temp tables for scalability.
+    """
+    if session is None:
+        raise ValueError("Snowpark session must be provided.")
+
+    # Create random assignment per unique ID
+    distinct_ids = (
+        df.select(id_col)
+          .distinct()
+          .with_column("rand_val", F.random())
+    )
+
+    # Split IDs into train/test subsets
+    train_ids_df = distinct_ids.filter(F.col("rand_val") < train_frac)
+    test_ids_df = distinct_ids.filter(F.col("rand_val") >= train_frac)
+
+    # Save ID lists as temporary Snowflake tables
+    session.sql("CREATE OR REPLACE TEMP TABLE TRAIN_IDS_TEMP AS SELECT * FROM TABLE(result_scan(last_query_id()))")
+    train_ids_df.write.save_as_table("TRAIN_IDS_TEMP", mode="overwrite", table_type="temp")
+
+    session.sql("CREATE OR REPLACE TEMP TABLE TEST_IDS_TEMP AS SELECT * FROM TABLE(result_scan(last_query_id()))")
+    test_ids_df.write.save_as_table("TEST_IDS_TEMP", mode="overwrite", table_type="temp")
+
+    # Join back to main DataFrame
+    train_df = df.join(session.table("TRAIN_IDS_TEMP"), id_col, "inner")
+    test_df = df.join(session.table("TEST_IDS_TEMP"), id_col, "inner")
+
+    # Verify overlap at ID level
+    overlap_df = session.table("TRAIN_IDS_TEMP").join(session.table("TEST_IDS_TEMP"), id_col, "inner")
+    overlap_count = overlap_df.count()
+
+    # Print summary
+    train_count = train_df.count()
+    test_count = test_df.count()
+    total_count = train_count + test_count
+    train_pct = (train_count / total_count * 100) if total_count > 0 else 0
+    test_pct = (test_count / total_count * 100) if total_count > 0 else 0
+
+    print(f"Train: {train_count:,} ({train_pct:.2f}%) | Test: {test_count:,} ({test_pct:.2f}%)")
+    if overlap_count > 0:
+        print(f"⚠️ Warning: {overlap_count:,} overlapping IDs found — please review.")
+    else:
+        print("✅ No ID overlap between Train and Test.")
+
+    return train_df, test_df
+
+from snowflake.snowpark import functions as F
+
 def split_by_id(df, id_col: str, train_frac: float = 0.6):
     """
     Split the Snowpark DataFrame into train and test sets by a given ID column.
