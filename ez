@@ -1,4 +1,65 @@
 from snowflake.snowpark import functions as F
+import uuid
+
+def split_by_id(df, id_col: str, train_frac: float = 0.6, session=None):
+    """
+    Split a Snowpark DataFrame into train/test sets ensuring:
+      - Each unique ID appears in only ONE of the two splits (no overlap)
+      - Approximate 60/40 split by total row count
+      - Fully scalable using Snowflake temp tables
+    """
+    if session is None:
+        raise ValueError("Snowpark session must be provided.")
+
+    # Generate random number for each unique ID
+    distinct_ids = (
+        df.select(id_col)
+          .distinct()
+          .with_column("rand_val", F.random())
+    )
+
+    # Materialize random assignment for reproducibility
+    temp_ids_table = f"TEMP_IDS_{uuid.uuid4().hex[:8].upper()}"
+    distinct_ids.write.save_as_table(temp_ids_table, mode="overwrite", table_type="temporary")
+
+    # Compute rough split by random number
+    train_ids_df = session.table(temp_ids_table).filter(F.col("rand_val") < train_frac)
+    test_ids_df  = session.table(temp_ids_table).filter(F.col("rand_val") >= train_frac)
+
+    # Create temp tables for joins
+    train_ids_table = f"TEMP_TRAIN_IDS_{uuid.uuid4().hex[:8].upper()}"
+    test_ids_table  = f"TEMP_TEST_IDS_{uuid.uuid4().hex[:8].upper()}"
+    train_ids_df.write.save_as_table(train_ids_table, mode="overwrite", table_type="temporary")
+    test_ids_df.write.save_as_table(test_ids_table, mode="overwrite", table_type="temporary")
+
+    # Join back to main data (ID-exclusive join ensures no overlap)
+    train_df = df.join(session.table(train_ids_table), id_col, "inner")
+    test_df  = df.join(session.table(test_ids_table), id_col, "inner")
+
+    # Compute row counts
+    train_count = train_df.count()
+    test_count  = test_df.count()
+    total_count = train_count + test_count
+    train_pct   = train_count / total_count * 100
+    test_pct    = test_count / total_count * 100
+
+    # Check for overlap
+    overlap_count = session.sql(f"""
+        SELECT COUNT(*) AS overlap_cnt
+        FROM {train_ids_table} a
+        INNER JOIN {test_ids_table} b USING ({id_col})
+    """).collect()[0]["OVERLAP_CNT"]
+
+    print(f"Train rows: {train_count:,} ({train_pct:.2f}%) | Test rows: {test_count:,} ({test_pct:.2f}%)")
+    if overlap_count == 0:
+        print("✅ No overlapping IDs between Train and Test.")
+    else:
+        print(f"⚠️ {overlap_count:,} overlapping IDs found — check random split logic.")
+
+    return train_df, test_df
+
+
+from snowflake.snowpark import functions as F
 
 def split_by_id(df, id_col: str, train_frac: float, session) -> tuple:
     """
