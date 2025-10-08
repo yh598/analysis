@@ -3,6 +3,44 @@ from snowflake.snowpark import functions as F
 def split_by_id(df, id_col: str, train_frac: float = 0.6):
     """
     Split a Snowpark DataFrame into train and test sets by a given ID column.
+    Ensures approximately 'train_frac' fraction of unique IDs are assigned to train,
+    with zero overlap between train and test sets.
+    """
+    distinct_ids = (
+        df.select(id_col)
+          .distinct()
+          .with_column("rand_val", F.random())
+    )
+
+    train_ids = distinct_ids.filter(F.col("rand_val") < train_frac)
+    test_ids = distinct_ids.filter(F.col("rand_val") >= train_frac)
+
+    train_df = df.join(train_ids, id_col, "inner")
+    test_df = df.join(test_ids, id_col, "inner")
+
+    train_count = train_df.count()
+    test_count = test_df.count()
+    total_count = train_count + test_count
+
+    train_pct = train_count * 100.0 / total_count if total_count > 0 else 0
+    test_pct = test_count * 100.0 / total_count if total_count > 0 else 0
+    print(f"Train: {train_count:,} ({train_pct:.2f}%) | Test: {test_count:,} ({test_pct:.2f}%)")
+
+    overlap_df = train_ids.join(test_ids, id_col, "inner")
+    overlap_count = overlap_df.count()
+    if overlap_count > 0:
+        print(f"⚠️ Warning: {overlap_count:,} IDs appear in both Train and Test! (Unexpected overlap)")
+    else:
+        print("✅ No ID overlap between Train and Test.")
+
+    return train_df, test_df
+
+
+from snowflake.snowpark import functions as F
+
+def split_by_id(df, id_col: str, train_frac: float = 0.6):
+    """
+    Split a Snowpark DataFrame into train and test sets by a given ID column.
     Ensures approximately `train_frac` fraction of the rows are in the train set.
     """
     # Assign random number (0-1) per unique ID
