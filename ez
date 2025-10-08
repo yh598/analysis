@@ -1,3 +1,58 @@
+import yaml
+from snowpark import Session
+
+def run_auth_log_pipeline(segment: str, conn):
+    """
+    Run Auth Log pipeline for digital or telephone segment.
+    
+    Args:
+        segment (str): 'digital' or 'telephone'
+        conn: Snowflake connection parameters (dict)
+    """
+    # Validate input
+    segment = segment.lower()
+    if segment not in ['digital', 'telephone']:
+        raise ValueError("segment must be 'digital' or 'telephone'")
+    
+    # Map file paths and table names dynamically
+    config_map = {
+        'digital': {
+            'pipeline_config': '/mnt/code/fam-1/notebooks/config/digital_train_pipeline_config.yaml',
+            'train_table': 'EZ250.FAM_V3_TRAIN_DIGITAL_202411_202503',
+        },
+        'telephone': {
+            'pipeline_config': '/mnt/code/fam-1/notebooks/config/telephone_train_pipeline_config.yaml',
+            'train_table': 'EZ250.FAM_V3_TRAIN_TELEPHONE_202411_202503',
+        }
+    }
+    
+    cfg = config_map[segment]
+    session = Session.builder.configs(conn).create()
+
+    # Load pipeline config
+    with open(cfg['pipeline_config'], 'r') as f:
+        pipeline_config = yaml.safe_load(f)
+
+    # Run query based on segment
+    query = f"""
+        SELECT
+            ATO_FRAUD,
+            FRAUD,
+            DSM_SCR_DESTI_SK,
+            USAA_PARTY_PD_ID,
+            USAA_PARTY_PD_ID AS PRINCIPLE_PARTY_PD_ID,
+            EVENT_TS
+        FROM {cfg['train_table']}
+    """
+
+    fam_label = session.sql(query)
+    base_table = pipeline_config['base_table_with_labels']
+    fam_label.write.save_as_table(base_table, mode='overwrite')
+    
+    print(f"✅ {segment.title()} segment pipeline completed successfully.")
+    return base_table
+
+
 from snowflake.snowpark import functions as F
 import uuid
 
