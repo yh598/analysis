@@ -2,6 +2,54 @@ from snowflake.snowpark import functions as F
 
 def split_by_id(df, id_col: str, train_frac: float = 0.6):
     """
+    Split the Snowpark DataFrame into train and test sets by a given ID column.
+    Ensures approximately 'train_frac' fraction of UNIQUE IDs are assigned to train,
+    with zero overlap between train and test sets.
+    """
+    # Create unique ID DataFrame with random value
+    distinct_ids = (
+        df.select(id_col)
+          .distinct()
+          .with_column("rand_val", F.random())
+    )
+
+    # Split distinct IDs into train/test groups (no overlap)
+    train_ids_df = distinct_ids.filter(F.col("rand_val") < train_frac)
+    test_ids_df = distinct_ids.filter(F.col("rand_val") >= train_frac)
+
+    # Collect ID values into Python lists (safe for reasonably sized distinct ID sets)
+    train_ids = [r[0] for r in train_ids_df.collect()]
+    test_ids = [r[0] for r in test_ids_df.collect()]
+
+    # Filter main DataFrame by ID lists
+    train_df = df.filter(F.col(id_col).isin(train_ids))
+    test_df = df.filter(F.col(id_col).isin(test_ids))
+
+    # Validate no overlap
+    overlap_ids = set(train_ids).intersection(set(test_ids))
+    overlap_count = len(overlap_ids)
+
+    train_count = train_df.count()
+    test_count = test_df.count()
+    total_count = train_count + test_count
+
+    train_pct = (train_count / total_count * 100) if total_count > 0 else 0
+    test_pct = (test_count / total_count * 100) if total_count > 0 else 0
+
+    print(f"Train: {train_count:,} ({train_pct:.2f}%) | Test: {test_count:,} ({test_pct:.2f}%)")
+    print(f"✅ Split by unique {id_col}: {len(train_ids):,} train IDs, {len(test_ids):,} test IDs")
+
+    if overlap_count > 0:
+        print(f"⚠️ {overlap_count:,} overlapping IDs found — please review logic.")
+    else:
+        print("✅ No ID overlap between Train and Test.")
+
+    return train_df, test_df
+
+from snowflake.snowpark import functions as F
+
+def split_by_id(df, id_col: str, train_frac: float = 0.6):
+    """
     Split a Snowpark DataFrame into train and test sets by a given ID column.
     Ensures approximately 'train_frac' fraction of unique IDs are assigned to train,
     with zero overlap between train and test sets.
