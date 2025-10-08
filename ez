@@ -1,3 +1,76 @@
+from snowflake.snowpark import functions as F
+
+def split_by_id(df, id_col: str, train_frac: float = 0.6):
+    """
+    Split a Snowpark DataFrame into train and test sets by a given ID column.
+    Ensures approximately `train_frac` fraction of the rows are in the train set.
+    """
+    # Assign random number (0-1) per unique ID
+    distinct_ids = df.select(id_col).distinct().with_column(
+        "rand_val", F.uniform(F.lit(0), F.lit(1))
+    )
+    
+    # Split IDs into train/test
+    train_ids = distinct_ids.filter(F.col("rand_val") < train_frac)
+    test_ids = distinct_ids.filter(F.col("rand_val") >= train_frac)
+    
+    # Join to original DataFrame
+    train_df = df.join(train_ids, id_col, "inner")
+    test_df = df.join(test_ids, id_col, "inner")
+    
+    # Count summary
+    train_count = train_df.count()
+    test_count = test_df.count()
+    total_count = train_count + test_count
+    train_pct = train_count * 100.0 / total_count if total_count > 0 else 0
+    test_pct = test_count * 100.0 / total_count if total_count > 0 else 0
+    
+    print(f"Train: {train_count} ({train_pct:.2f}%) | Test: {test_count} ({test_pct:.2f}%)")
+    return train_df, test_df
+
+
+def fraud_rate(df, name):
+    """Compute and print fraud rate for a given dataset."""
+    total = df.count()
+    frauds = df.filter(F.col("ATO_FRAUD") == 1).count()
+    rate = frauds / total if total > 0 else 0
+    print(f"{name} → Total: {total:,}, Frauds: {frauds:,}, Fraud Rate: {rate:.2%}")
+    return rate
+
+
+def process_segment(segment: str, id_col: str = "USAA_PARTY_PD_ID", train_frac: float = 0.6):
+    """
+    Automates FAM feature splitting for both telephone and digital segments.
+    Reads, splits, saves, and reports fraud rate for each.
+    
+    Example:
+      process_segment("TELEPHONE")
+      process_segment("DIGITAL")
+    """
+    table_name = f"PBMKEZ250.EZ250.FAM_V3_TRAIN_{segment}_FINAL"
+    train_out = f"PBMKEZ250.EZ250.FAM_V3_{segment}_TRAIN"
+    test_out = f"PBMKEZ250.EZ250.FAM_V3_{segment}_TEST"
+    
+    print(f"\n=== Processing {segment} segment ===")
+    
+    df = session.sql(f"SELECT * FROM {table_name}")
+    train_df, test_df = split_by_id(df, id_col, train_frac=train_frac)
+    
+    fraud_rate(train_df, f"{segment} Train")
+    fraud_rate(test_df, f"{segment} Test")
+    
+    # Save train/test splits back to Snowflake
+    train_df.write.save_as_table(train_out, mode="overwrite")
+    test_df.write.save_as_table(test_out, mode="overwrite")
+    
+    print(f"{segment} segment completed and saved to Snowflake.\n")
+
+
+# Run both segments
+process_segment("TELEPHONE")
+process_segment("DIGITAL")
+
+
 from xgboost import XGBClassifier
 from sklearn.model_selection import RandomizedSearchCV
 import pandas as pd
