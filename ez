@@ -1,3 +1,58 @@
+def get_base_table(segment: str, key: str):
+    """
+    Get base table for a given segment ('digital' or 'telephone') by running the FAM Auth Log pipeline.
+
+    Parameters
+    ----------
+    segment : str
+        The segment name, either 'digital' or 'telephone'.
+    key : str
+        The dynamic column name replacing DSM_SCR_DESTI_SK.
+    """
+    import yaml
+    from snowflake.snowpark import Session
+    import time
+
+    start_time = time.time()
+    print(f"\n=== Running FAM Auth Log pipeline for segment: {segment.upper()} ===")
+
+    # Load pipeline config dynamically
+    pipeline_config_path = f"/mnt/code/fam-1/notebooks/config/{segment}_train_pipeline_config.yaml"
+    print(f"Loading pipeline config from {pipeline_config_path} ...")
+    pipeline_config = yaml.full_load(open(pipeline_config_path))
+
+    # Generate SQL query and execute
+    print("Executing label join query...")
+    query = fam_label.mbr_join_query.format(**pipeline_config)
+    fraud_table = session.sql(query)
+
+    # Save table with labels
+    base_table_name = pipeline_config['base_table_with_labels']
+    print(f"Writing base table with labels: {base_table_name}")
+    fraud_table.write.save_as_table(base_table_name, mode='overwrite')
+
+    # Read from FAM_V3_TRAIN_{SEGMENT}_ table, using {key} dynamically
+    sql_query = f"""
+        SELECT
+            ATO_FRAUD,
+            FRAUD,
+            {key},
+            USAA_PARTY_PD_ID,
+            USAA_PARTY_PD_ID AS PRINCIPLE_PARTY_PD_ID,
+            EVENT_TS
+        FROM PNBK2250.EZ250.FAM_V3_TRAIN_{segment.upper()}_202411_202503
+    """
+    print(f"Reading training data from Snowflake using key={key} ...")
+    df = session.sql(sql_query)
+
+    print(f"Loaded {df.count()} rows for segment {segment.upper()}.")
+
+    elapsed = time.time() - start_time
+    print(f"=== Completed get_base_table for {segment.upper()} in {elapsed:.2f} seconds ===")
+
+    return df
+
+
 def get_base_table(segment: str):
     """
     Get base table for a given segment ('digital' or 'telephone') by running the FAM Auth Log pipeline.
