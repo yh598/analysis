@@ -1,3 +1,40 @@
+def save_auth_long_table(segment: str):
+    """
+    Create and save the AUTH_LONG table for a given segment ('digital' or 'telephone').
+
+    Parameters
+    ----------
+    segment : str
+        Segment name, either 'digital' or 'telephone'.
+    """
+    import time
+
+    start_time = time.time()
+    print(f"\n=== Creating AUTH_LONG table for segment: {segment.upper()} ===")
+
+    # Read from CLEANED_AUTH_LONG source table dynamically
+    df = session.sql(f"""
+        SELECT *
+        FROM PNBK2250.EZ250.FAM_V3_TRAIN_{segment.upper()}_202411_202503_CLEANED_AUTH_LONG
+    """)
+
+    print(f"Loaded {df.count()} rows from CLEANED_AUTH_LONG for {segment.upper()}.")
+
+    # Build schema, database, and target table name dynamically
+    schema = session.get_current_schema().replace('"', '')
+    database = session.get_current_database().replace('"', '')
+    table = f"FAM_V3_TRAIN_{segment.upper()}_202411_202503_AUTH"
+    full_table_name = '.'.join([database, schema, table])
+
+    print(f"Saving table to: {full_table_name}")
+    df.write.save_as_table(full_table_name, mode='overwrite')
+
+    elapsed = time.time() - start_time
+    print(f"=== Completed save_auth_long_table for {segment.upper()} in {elapsed:.2f} seconds ===")
+
+    return full_table_name
+
+
 def get_base_table(segment: str, key: str):
     """
     Get base table for a given segment ('digital' or 'telephone') by running the FAM Auth Log pipeline,
