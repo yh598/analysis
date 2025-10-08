@@ -1,5 +1,53 @@
 from snowflake.snowpark import functions as F
 
+def split_by_id(df, id_col: str, train_frac: float, session) -> tuple:
+    """
+    Split a Snowpark DataFrame into train and test DataFrames by row count (approximately train_frac of rows in train).
+    Allows the same ID to appear in both train and test if needed for achieving the row count ratio.
+    
+    Parameters:
+        df        : Snowpark DataFrame to split.
+        id_col    : Name of the ID column (not used to restrict split, but kept for compatibility).
+        train_frac: Fraction of rows to assign to the training set (e.g., 0.60 for 60% train).
+        session   : Snowpark Session object (used for any SQL or table operations).
+    
+    Returns:
+        train_df, test_df : Tuple of Snowpark DataFrames for training and testing splits.
+    """
+    # Validate train_frac
+    if not 0 < train_frac < 1:
+        raise ValueError("train_frac must be a fraction between 0 and 1.")
+    
+    # 1. Add a random value column to each row using Snowflake's uniform distribution [0,1).
+    #    We use Snowflake's built-in random number generator for Snowpark.
+    #    - F.random() gives a random 64-bit integer per row [oai_citation:0‡docs.snowflake.com](https://docs.snowflake.com/en/sql-reference/functions/random#:~:text=,the%20seed%20is%20the%20same).
+    #    - F.uniform(0, 1, F.random()) converts it to a uniform [0,1) float per row.
+    df_with_rand = df.with_column("rand_val", F.uniform(0.0, 1.0, F.random()))
+    
+    # 2. MATERIALIZE the DataFrame with the random values to ensure each row’s random number is fixed.
+    #    If we filtered df_with_rand twice without materialization, Snowflake would generate new random values 
+    #    for each query, causing inconsistent splits. To avoid this, we write to a temporary table.
+    temp_table_name = f"TMP_SPLIT_{session.get_session_id()}"  # unique temp table name for this session
+    df_with_rand.write.mode("overwrite").save_as_table(temp_table_name, table_type="temporary")
+    
+    # 3. Read from the temp table and split into train and test DataFrames based on the random value threshold.
+    temp_df = session.table(temp_table_name)
+    train_df = temp_df.filter(F.col("rand_val") < train_frac).drop("rand_val")
+    test_df  = temp_df.filter(F.col("rand_val") >= train_frac).drop("rand_val")
+    
+    # 4. (Optional) Print the row counts and percentages for verification.
+    train_count = train_df.count()
+    test_count  = test_df.count()
+    total_count = train_count + test_count
+    print(f"Train rows: {train_count} ({(train_count/total_count)*100:.2f}%)")
+    print(f"Test  rows: {test_count} ({(test_count/total_count)*100:.2f}%)")
+    
+    # Note: The temporary table will be dropped automatically at the end of the session.
+    return train_df, test_df
+
+
+from snowflake.snowpark import functions as F
+
 def split_by_id(df, id_col: str, train_frac: float = 0.6, session=None):
     """
     Split a Snowpark DataFrame into train and test sets by unique ID.
