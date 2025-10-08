@@ -1,3 +1,64 @@
+from snowflake.snowpark import functions as F
+
+def split_by_id(df, id_col: str, train_frac: float = 0.6, session=None):
+    """
+    Split a Snowpark DataFrame into train and test sets by unique ID.
+    Guarantees:
+      • No overlap in ID between train and test.
+      • Train/test ratio is based on unique IDs (~train_frac).
+      • Fully scalable using Snowflake temp tables.
+    """
+    if session is None:
+        raise ValueError("Snowpark session must be provided.")
+
+    # Assign random number per unique ID and persist it in a temporary table
+    distinct_ids = (
+        df.select(id_col)
+          .distinct()
+          .with_column("rand_val", F.random())
+    )
+    distinct_ids.write.save_as_table("TEMP_ID_SPLIT", mode="overwrite", table_type="temp")
+
+    # Derive train/test ID sets inside Snowflake (no joins yet)
+    session.sql("""
+        CREATE OR REPLACE TEMP TABLE TRAIN_IDS_TEMP AS
+        SELECT {id_col} FROM TEMP_ID_SPLIT WHERE rand_val < {train_frac}
+    """.format(id_col=id_col, train_frac=train_frac))
+
+    session.sql("""
+        CREATE OR REPLACE TEMP TABLE TEST_IDS_TEMP AS
+        SELECT {id_col} FROM TEMP_ID_SPLIT WHERE rand_val >= {train_frac}
+    """.format(id_col=id_col, train_frac=train_frac))
+
+    # Join back to get full data
+    train_df = df.join(session.table("TRAIN_IDS_TEMP"), id_col, "inner")
+    test_df = df.join(session.table("TEST_IDS_TEMP"), id_col, "inner")
+
+    # Validate split
+    total_ids = session.table("TEMP_ID_SPLIT").count()
+    train_ids = session.table("TRAIN_IDS_TEMP").count()
+    test_ids = session.table("TEST_IDS_TEMP").count()
+    overlap_count = session.sql(f"""
+        SELECT COUNT(*) FROM TRAIN_IDS_TEMP a 
+        JOIN TEST_IDS_TEMP b USING ({id_col})
+    """).collect()[0][0]
+
+    train_count = train_df.count()
+    test_count = test_df.count()
+    total_count = train_count + test_count
+
+    print(f"Total unique IDs: {total_ids:,}")
+    print(f"Train IDs: {train_ids:,} | Test IDs: {test_ids:,}")
+    print(f"Train/Test ratio (IDs): {train_ids/total_ids:.2%}/{test_ids/total_ids:.2%}")
+    print(f"Rows → Train: {train_count:,} | Test: {test_count:,} ({train_count/total_count:.2%}/{test_count/total_count:.2%})")
+
+    if overlap_count > 0:
+        print(f"⚠️ {overlap_count:,} overlapping IDs found (unexpected).")
+    else:
+        print("✅ No overlapping IDs between Train and Test.")
+
+    return train_df, test_df
+
 def process_segment(segment: str, id_col: str = "USAA_PARTY_PD_ID", train_frac: float = 0.6, session=None):
     """
     Run the FAM feature split process for a given segment (TELEPHONE or DIGITAL).
