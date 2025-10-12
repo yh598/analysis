@@ -1,3 +1,57 @@
+def save_auth_log_table(segment: str, date: str, purpose: str, key: str):
+    """
+    Create and save the AUTH_LOG table for a given segment ('digital' or 'telephone'),
+    ensuring no duplicated columns from the join between tables a and b.
+    
+    Parameters
+    ----------
+    segment : str
+        Segment name, either 'digital' or 'telephone'.
+    date : str
+        Date string in YYYYMM_DD format.
+    purpose : str
+        Purpose tag such as 'TRAIN' or 'SCORE'.
+    key : str
+        Primary key column to join tables on.
+    """
+
+    import time
+    import pyspark.sql.functions as F
+
+    start_time = time.time()
+
+    print(f"\n==== Creating AUTH_LOG table for segment: {segment.upper()} ====")
+
+    # Define source table names
+    table_a = f"PBNL2250.EZ250.FAM_V3_{purpose}_{segment.upper()}_{date}_CLEANED_W_AUTH_LONG"
+    table_b = f"PBNL2250.EZ250.FAM_V3_{purpose}_{segment.upper()}_{date}_CLEANED_W_AUTH"
+
+    # Load tables
+    df_a = spark.table(table_a)
+    df_b = spark.table(table_b)
+
+    # Determine columns to keep from b (exclude duplicates from a)
+    cols_b_unique = [c for c in df_b.columns if c not in df_a.columns]
+
+    # Perform join safely
+    df_joined = df_a.join(df_b.select([key] + cols_b_unique), on=key, how="inner")
+
+    # Build schema, database, and target table name dynamically
+    schema = session.get_current_schema().replace('"', '')
+    database = session.get_current_database().replace('"', '')
+    table = f"FAM_V3_{purpose}_{segment.upper()}_{date}_CLEANED_W_AUTH"
+    full_table_name = f"{database}.{schema}.{table}"
+
+    print(f"Saving table to: {full_table_name}")
+
+    # Save output table (overwrite mode)
+    df_joined.write.saveAsTable(full_table_name, mode="overwrite")
+
+    elapsed = time.time() - start_time
+    print(f"==== ✅ Completed save_auth_log_table for {segment.upper()} in {elapsed:.2f} seconds ====\n")
+
+    return full_table_name
+
 def save_auth_long_table(segment: str):
     """
     Create and save the AUTH_LONG table for a given segment ('digital' or 'telephone').
