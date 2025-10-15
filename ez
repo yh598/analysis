@@ -1,3 +1,19 @@
+df = session.sql(sql)
+
+# Handle missing values
+for col in df.columns:
+    if "since" in col.lower():
+        df = df.fillna({col: -999})
+    else:
+        df = df.fillna({col: 0})
+
+# Save final table
+df.write.save_as_table(output_table, mode="overwrite")
+
+return output_table
+
+
+
 # ============================================================
 #  2.1 FAM Feature Generation Pipeline (Digital + Telephone)
 # ============================================================
