@@ -1,3 +1,34 @@
+id_types = ["DEVICE_ID", "MACHINE_ID", "VISITOR_ID"]
+
+# prefer explicit names from config if present; otherwise fall back to a pattern
+glassbox_out_map = {
+    "DEVICE_ID":  pipeline_config.get(
+        "glassbox_device_output_table",
+        f"{pipeline_config['base_table']}_W_GLASSBOX_DEVICE_ID"
+    ),
+    "MACHINE_ID": pipeline_config.get(
+        "glassbox_machine_output_table",
+        f"{pipeline_config['base_table']}_W_GLASSBOX_MACHINE_ID"
+    ),
+    "VISITOR_ID": pipeline_config.get(
+        "glassbox_visitor_output_table",
+        f"{pipeline_config['base_table']}_W_GLASSBOX_VISITOR_ID"
+    ),
+}
+
+for id_type in id_types:
+    fam_glassbox.glassbox_features(
+        segment=segment,
+        base_table=pipeline_config['base_table_with_labels'],
+        glassbox_session_table=pipeline_config['glassbox_session_table'],
+        session=session,
+        id_type=id_type,
+        n_days_list=[1, 3, 7, 30, 60],
+        output_table=glassbox_out_map[id_type],   # <- different table per id_type
+    )
+    print(f"Wrote Glassbox features for {id_type} -> {glassbox_out_map[id_type]}")
+
+
 df = session.sql(sql)
 
 # Handle missing values
