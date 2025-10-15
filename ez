@@ -2,6 +2,174 @@
 #  2.1 FAM Feature Generation Pipeline (Digital + Telephone)
 # ============================================================
 
+import os
+import snowflake.snowpark as snowpark
+from base64 import b64encode, b64decode
+import pandas as pd
+import numpy as np
+import yaml
+import importlib
+from datetime import datetime
+import getpass
+
+# Display formatting
+pd.set_option('display.float_format', lambda x: '%.4f' % x)
+
+# ------------------------------------------------------------
+#  Snowflake Connection Setup
+# ------------------------------------------------------------
+conn = {
+    'user': os.environ['EAGLE_ID'],
+    'password': getpass.getpass("Eagle Password"),
+    'account': 'usaabank.us-east-1',
+    'role': 'SNF_ML_BNK_P_EZ_250_PROD',
+    'warehouse': 'BNK_BDA_D_WH',
+    'database': 'BNKFRD',
+    'schema': 'EZ250'
+}
+session = snowpark.Session.builder.configs(conn).create()
+
+# ------------------------------------------------------------
+#  Segment / Key Configuration
+# ------------------------------------------------------------
+# Define the segments and their corresponding YAML config + join key
+segment_configs = {
+    "DIGITAL": {
+        "yaml": "/mnt/code/fam/notebooks/config/digital_train_pipeline_config.yaml",
+        "key": "DESTT"
+    },
+    "TELEPHONE": {
+        "yaml": "/mnt/code/fam/notebooks/config/telephone_train_pipeline_config.yaml",
+        "key": "DESTI"
+    }
+}
+
+# ------------------------------------------------------------
+#  Main Execution Loop
+# ------------------------------------------------------------
+for segment, cfg in segment_configs.items():
+    print(f"\n==============================")
+    print(f"Processing Segment: {segment}")
+    print(f"==============================\n")
+
+    # Load YAML configuration
+    with open(cfg["yaml"], "r") as f:
+        pipeline_config = yaml.full_load(f)
+
+    key = cfg["key"]
+
+    # --------------------------------------------------------
+    #  PHONE FEATURES
+    # --------------------------------------------------------
+    importlib.reload(fam_phone)
+    fam_phone.phone_features(
+        base_table=pipeline_config['base_table_with_labels'],
+        phone_session_table=pipeline_config['phone_session_table'],
+        session=session,
+        phone_output_table=pipeline_config['phone_output_table'],
+        end_date="2025-03-31",
+        n_days_list=[1, 7, 30, 60]
+    )
+
+    # --------------------------------------------------------
+    #  EMAIL FEATURES
+    # --------------------------------------------------------
+    importlib.reload(fam_email)
+    fam_email.email_features(
+        base_table=pipeline_config['base_table_with_labels'],
+        email_session_table=pipeline_config['email_session_table'],
+        session=session,
+        email_output_table=pipeline_config['email_output_table'],
+        end_date="2025-03-31",
+        n_days_list=[1, 7, 30, 60]
+    )
+
+    # --------------------------------------------------------
+    #  ADDRESS FEATURES
+    # --------------------------------------------------------
+    importlib.reload(fam_address)
+    fam_address.address_features(
+        base_table=pipeline_config['base_table_with_labels'],
+        address_session_table=pipeline_config['address_session_table'],
+        session=session,
+        address_output_table=pipeline_config['address_output_table'],
+        end_date="2025-03-31",
+        n_days_list=[1, 7, 30, 60]
+    )
+
+    # --------------------------------------------------------
+    #  CAP FEATURES
+    # --------------------------------------------------------
+    importlib.reload(fam_cap)
+    fam_cap.cap_features(
+        base_table=pipeline_config['base_table_with_labels'],
+        cap_session_table=pipeline_config['cap_session_table'],
+        session=session,
+        cap_output_table=pipeline_config['cap_output_table'],
+        end_date="2025-03-31",
+        n_days_list=[1, 7, 30, 60]
+    )
+
+    # --------------------------------------------------------
+    #  IP FEATURES
+    # --------------------------------------------------------
+    importlib.reload(fam_ip)
+    fam_ip.ip_features(
+        base_table=pipeline_config['base_table_with_labels'],
+        ip_session_table=pipeline_config['ip_session_table'],
+        session=session,
+        ip_output_table=pipeline_config['ip_output_table'],
+        n_days_list=[1, 7, 30, 60],
+        start_date=datetime(2024, 1, 1),
+        end_date=datetime(2025, 3, 31)
+    )
+
+    # --------------------------------------------------------
+    #  GLASSBOX FEATURES
+    # --------------------------------------------------------
+    importlib.reload(fam_glassbox)
+    for id_type in ["DEVICE", "MACHINE", "VISITOR"]:
+        fam_glassbox.glassbox_features(
+            segment=segment,
+            base_table=pipeline_config['base_table_with_labels'],
+            glassbox_session_table=pipeline_config['glassbox_session_table'],
+            session=session,
+            id_type=id_type,
+            n_days_list=[1, 7, 30, 60]
+        )
+
+    # --------------------------------------------------------
+    #  MEMBER FEATURES
+    # --------------------------------------------------------
+    importlib.reload(fam_member)
+    fam_member.get_top_features_with_base(
+        session=session,
+        base_table=pipeline_config['base_table_cleaned'],
+        right_table_prefix=pipeline_config['msgid_member_table'],
+        output_table=pipeline_config['msgid_member_output_table'],
+        windows=["1D", "7D", "30D"],
+        target_col="ATO_FRAUD"
+    )
+
+    # --------------------------------------------------------
+    #  MERGE FEATURES
+    # --------------------------------------------------------
+    importlib.reload(fam_merge)
+    fam_merge.merge_features(
+        session=session,
+        segment=segment,
+        end_date="2025-03-31",
+        key=key
+    )
+
+    print(f"\n✅ Completed segment: {segment} (key={key})\n")
+
+print("\n🎯 All segments processed successfully!")
+
+# ============================================================
+#  2.1 FAM Feature Generation Pipeline (Digital + Telephone)
+# ============================================================
+
 import snowflake.snowpark as snowpark
 from base64 import b64encode, b64decode
 import pandas as pd
