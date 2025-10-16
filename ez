@@ -23,6 +23,149 @@ def get_top_features_with_base(
     for w in windows:
         right_table = f"{right_table_prefix}_{w}"
 
+        # --- Updated join: pick latest RECORD_DT before EVENT_DATE ---
+        join_df = spark.sql(f"""
+            WITH filtered_b AS (
+                SELECT b.*, 
+                       a.EVENT_DATE AS BASE_EVENT_DATE
+                FROM {base_table} a
+                JOIN {right_table} b
+                  ON a.USAAPARTY_PD_ID = b.USAAPARTYPRIMARYDIGITID
+                 AND b.RECORD_DT <= a.EVENT_DATE
+                WHERE b.USAAPARTYPRIMARYDIGITID IS NOT NULL
+            ),
+            latest_b AS (
+                SELECT *,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY USAAPARTYPRIMARYDIGITID, BASE_EVENT_DATE
+                           ORDER BY RECORD_DT DESC
+                       ) AS rn
+                FROM filtered_b
+            )
+            SELECT
+                a.ATO_FRAUD,
+                a.ATO_FRAUD_V2,
+                a.FRAUD,
+                a.EVENT_DATE AS PARTITION_DT,
+                a.EVENT_TS,
+                a.USAAPARTY_PD_ID,
+                a.DSM_SCR_DESTT_SK,
+                b.*
+            FROM {base_table} a
+            LEFT JOIN latest_b b
+                ON a.USAAPARTY_PD_ID = b.USAAPARTYPRIMARYDIGITID
+               AND a.EVENT_DATE = b.BASE_EVENT_DATE
+               AND b.rn = 1
+        """).toPandas()
+
+        # --- Feature selection ---
+        exclude_cols = [
+            "USAAPARTYPRIMARYDIGITID", "USA_PARTY_SK", "RECORD_DT", 
+            "RECORD_VERSION", "PROCESS_DT", "USAAPARTY_PD_ID", 
+            "ATO_FRAUD", "ATO_FRAUD_V2", "FRAUD"
+        ]
+
+        features = [c for c in join_df.columns if c not in exclude_cols]
+        X, y = join_df[features], join_df[target_col]
+
+        # --- Train XGBoost model ---
+        model = XGBClassifier(
+            use_label_encoder=False,
+            eval_metric="logloss",
+            n_estimators=200,
+            max_depth=6,
+            learning_rate=0.1
+        )
+        model.fit(X, y)
+
+        # --- Feature importance ---
+        feat_imp = pd.DataFrame({
+            "Feature": features,
+            "Importance": model.feature_importances_
+        })
+
+        # Keep top N features
+        feat_imp = (
+            feat_imp[feat_imp["Feature"].isin([c for c in join_df.columns if c not in exclude_cols])]
+            .sort_values("Importance", ascending=False)
+            .head(top_n)
+        )
+
+        # Add suffix by window
+        feat_imp["Feature"] = feat_imp["Feature"].astype(str) + f"_{w}"
+        all_features.append(feat_imp["Feature"])
+
+    # --- Merge all selected features ---
+    merged_features = pd.concat(all_features, axis=0).reset_index(drop=True)
+
+    # --- Build dynamic SELECT query ---
+    select_cols = ["a.*"]
+    for w in windows:
+        alias = f"t{w}"
+        win_feats = merged_features[merged_features.str.endswith(f"_{w}")]
+        raw_feats = [f.replace(f"_{w}", "") for f in win_feats]
+        select_cols.extend([f"{alias}.{raw} AS {feat}" for raw, feat in zip(raw_feats, win_feats)])
+
+    sql_query = f"SELECT {', '.join(select_cols)} FROM {base_table} a \n"
+
+    for w in windows:
+        alias = f"t{w}"
+        right_table = f"{right_table_prefix}_{w}"
+
+        # Same logic for final merged join
+        sql_query += f"""
+        LEFT JOIN (
+            SELECT * FROM (
+                SELECT 
+                    b.*, 
+                    a.EVENT_DATE AS BASE_EVENT_DATE,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY b.USAAPARTYPRIMARYDIGITID, a.EVENT_DATE
+                        ORDER BY b.RECORD_DT DESC
+                    ) AS rn
+                FROM {base_table} a
+                JOIN {right_table} b
+                  ON a.USAAPARTY_PD_ID = b.USAAPARTYPRIMARYDIGITID
+                 AND b.RECORD_DT <= a.EVENT_DATE
+                WHERE b.USAAPARTYPRIMARYDIGITID IS NOT NULL
+            )
+            WHERE rn = 1
+        ) {alias}
+        ON a.USAAPARTY_PD_ID = {alias}.USAAPARTYPRIMARYDIGITID
+        AND a.EVENT_DATE = {alias}.BASE_EVENT_DATE
+        """
+
+    # --- Execute and save output ---
+    merged_df = spark.sql(sql_query)
+    merged_df.write.mode("overwrite").saveAsTable(output_table)
+
+    return sql_query, merged_features
+
+def get_top_features_with_base(
+    spark, 
+    base_table, 
+    right_table_prefix, 
+    output_table, 
+    windows, 
+    target_col="FRAUD", 
+    top_n=10
+):
+    """
+    Returns:
+        DataFrame: Top features across windows with suffixes
+    """
+
+    import pandas as pd
+    from xgboost import XGBClassifier
+
+    all_features = []
+
+    # Load base table once
+    base_df = spark.sql(f"SELECT * FROM {base_table}")
+
+    for w in windows:
+        right_table = f"{right_table_prefix}_{w}"
+
         # --- Updated join: pick latest record_dt for each ID ---
         join_df = spark.sql(f"""
             WITH latest_b AS (
