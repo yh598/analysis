@@ -1,3 +1,47 @@
+# -------------------------------------------------------------------
+# MEMBER FEATURES - LOOPED VERSION
+# -------------------------------------------------------------------
+
+import importlib
+importlib.reload(fam_member)
+
+# Define table configurations
+member_feature_configs = [
+    {
+        "right_table_prefix": pipeline_config["dig_member_table"],
+        "output_table": pipeline_config["dig_member_output_table"]
+    },
+    {
+        "right_table_prefix": pipeline_config["dig_member_crossdim_table"],
+        "output_table": pipeline_config["dig_member_crossdim_output_table"]
+    },
+    {
+        "right_table_prefix": pipeline_config["msrdig_member_table"],
+        "output_table": pipeline_config["msrdig_member_output_table"]
+    },
+    {
+        "right_table_prefix": pipeline_config["msrdig_member_crossdim_table"],
+        "output_table": pipeline_config["msrdig_member_crossdim_output_table"]
+    },
+    {
+        "right_table_prefix": pipeline_config["ivr_member_table"],
+        "output_table": pipeline_config["ivr_member_output_table"]
+    }
+]
+
+# Loop through each configuration
+for cfg in member_feature_configs:
+    fam_member.get_top_features_with_base(
+        session=session,
+        base_table=pipeline_config["base_table_cleaned"],
+        right_table_prefix=cfg["right_table_prefix"],
+        output_table=cfg["output_table"],
+        key=key,
+        windows=["1D", "7D", "30D"],
+        target_col="ATO_FRAUD"
+    )
+
+
 id_types = ["DEVICE_ID", "MACHINE_ID", "VISITOR_ID"]
 
 # prefer explicit names from config if present; otherwise fall back to a pattern
