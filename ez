@@ -1,3 +1,30 @@
+from snowflake.snowpark import functions as F
+from snowflake.snowpark.types import (
+    IntegerType, LongType, FloatType, DoubleType, DecimalType
+)
+
+# Handle missing values — only apply to numeric columns
+numeric_types = (IntegerType, LongType, FloatType, DoubleType, DecimalType)
+
+for field in df.schema.fields:
+    col = field.name
+    col_lower = col.lower()
+    col_type = type(field.datatype)
+
+    if col_type in numeric_types:
+        if "distance_miles_from_last_session" in col_lower or "travel_speed_mph" in col_lower:
+            df = df.with_column(col, F.when(F.col(col).is_null(), F.lit(-999)).otherwise(F.col(col)))
+        else:
+            df = df.with_column(col, F.when(F.col(col).is_null(), F.lit(0)).otherwise(F.col(col)))
+    else:
+        # Skip non-numeric columns
+        continue
+
+# Save final table
+df.write.save_as_table(output_table, mode="overwrite")
+return output_table
+
+
 from pyspark.sql import functions as F
 from pyspark.sql.types import NumericType
 
