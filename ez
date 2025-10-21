@@ -1,4 +1,24 @@
 from pyspark.sql import functions as F
+from pyspark.sql.types import NumericType
+
+# Handle missing values — only apply to numeric columns
+for col, dtype in df.dtypes:
+    col_lower = col.lower()
+    if isinstance(df.schema[col].dataType, NumericType):
+        if 'distance_miles_from_last_session' in col_lower or 'travel_speed_mph' in col_lower:
+            df = df.withColumn(col, F.when(F.col(col).isNull(), F.lit(-999)).otherwise(F.col(col)))
+        else:
+            df = df.withColumn(col, F.when(F.col(col).isNull(), F.lit(0)).otherwise(F.col(col)))
+    else:
+        # Skip non-numeric columns (string, timestamp, boolean, etc.)
+        continue
+
+# Save final table
+df.write.save_as_table(output_table, mode="overwrite")
+return output_table
+
+
+from pyspark.sql import functions as F
 
 for col in df.columns:
     col_str = str(col).lower()
