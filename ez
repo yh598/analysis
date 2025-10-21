@@ -1,3 +1,13 @@
+from pyspark.sql import functions as F
+
+for col in df.columns:
+    col_str = str(col).lower()
+    if "since" in col_str or "travel_speed_mph" in col_str:
+        df = df.withColumn(col, F.when(F.col(col).isNull(), F.lit(-999)).otherwise(F.col(col)))
+    else:
+        df = df.withColumn(col, F.when(F.col(col).isNull(), F.lit(0)).otherwise(F.col(col)))
+
+
 def get_top_features_with_base(
     spark, 
     base_table, 
