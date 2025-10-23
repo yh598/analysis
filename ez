@@ -1,3 +1,31 @@
+sql = f"""
+CREATE OR REPLACE TEMP VIEW base AS
+SELECT
+    PRTY_ID AS base_party_id,
+    CNTC_PT_VER_GMT_TS AS base_event_ts,
+    LOWER(TRIM(CUST_EMAIL_ADDR_TXT)) AS CUST_EMAIL_ADDR_TXT
+FROM {email_session_table}
+WHERE 
+    CNTC_PT_VER_GMT_TS <= '{end_date}'
+    AND CNTC_PT_VER_GMT_TS >= DATEADD(day, -{look_back_window}, '{start_date}')
+    AND CUST_EMAIL_ADDR_TXT IS NOT NULL
+    AND TRIM(CUST_EMAIL_ADDR_TXT) <> ''
+    -- only include valid-looking emails
+    AND LOWER(TRIM(CUST_EMAIL_ADDR_TXT)) RLIKE '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{{2,}}$'
+    -- exclude known invalid patterns
+    AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%none%'
+    AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%n/a%'
+    AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%refused%'
+    AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%declined%'
+    AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%usaa%'
+    AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%user%'
+    AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%no@%'
+    AND LOWER(CUST_EMAIL_ADDR_TXT) NOT LIKE '%email%'
+"""
+
+session.sql(sql).collect()
+
+
 from snowflake.snowpark import functions as F
 from snowflake.snowpark.types import (
     IntegerType, LongType, FloatType, DoubleType, DecimalType
