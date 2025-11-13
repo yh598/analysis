@@ -1,6 +1,76 @@
 import os
 import pandas as pd
 
+# ---------------------------------
+# CONFIG
+# ---------------------------------
+INPUT_DIR = "./"                   # folder with parquet files
+OUTPUT_DIR = "./output_files"      # folder to save updated parquet files
+
+OLD_NODE = "1032"                  # treat node codes as strings
+NEW_NODE = "1017"
+
+# Ensure output directory exists
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
+# ---------------------------------
+# FUNCTION TO PROCESS A FILE
+# ---------------------------------
+def update_parquet(file_path):
+    print(f"Processing: {file_path}")
+
+    # Load parquet file
+    df = pd.read_parquet(file_path)
+
+    # Track whether the file was updated
+    updated = False
+
+    # Identify columns that contain 'node' in their name
+    node_cols = [c for c in df.columns if "node" in c.lower()]
+    print(f"Found node columns: {node_cols}")
+
+    for col in node_cols:
+        col_str = df[col].astype(str)
+
+        # Check if OLD_NODE exists
+        if col_str.isin([OLD_NODE]).any():
+            updated = True
+
+            # Duplicate rows where col == OLD_NODE
+            df_copy = df[col_str == OLD_NODE].copy()
+            df_copy[col] = NEW_NODE
+
+            # Append to original dataframe
+            df = pd.concat([df, df_copy], ignore_index=True)
+
+            print(f"Updated column: {col}, added {len(df_copy)} rows")
+
+    # Save the updated parquet
+    out_name = os.path.basename(file_path)
+    out_path = os.path.join(OUTPUT_DIR, out_name)
+    df.to_parquet(out_path, index=False)
+
+    if updated:
+        print(f"Saved updated file: {out_path}")
+    else:
+        print(f"No updates needed. Saved original file: {out_path}")
+
+
+# ---------------------------------
+# PROCESS ALL PARQUET FILES
+# ---------------------------------
+print("Starting DO-daily parameter updates...")
+
+for fname in os.listdir(INPUT_DIR):
+    if fname.endswith(".parquet"):
+        update_parquet(os.path.join(INPUT_DIR, fname))
+
+print("All files processed.")
+
+import os
+import pandas as pd
+
 INPUT_DIR = "./"                      # where parquet files are
 OUTPUT_DIR = "./output_files"         # where updated output goes
 OLD_NODE = 1032
