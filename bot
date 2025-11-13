@@ -1,3 +1,58 @@
+import os
+import pandas as pd
+
+INPUT_DIR = "./"                      # where parquet files are
+OUTPUT_DIR = "./output_files"         # where updated output goes
+OLD_NODE = 1032
+NEW_NODE = 1017
+
+# Create output folder if not exists
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+def update_parquet(file_path):
+    print(f"Processing: {file_path}")
+
+    # Load file
+    df = pd.read_parquet(file_path)
+
+    # Track whether we found any node columns
+    updated = False
+
+    # Find columns that contain node codes
+    node_cols = [c for c in df.columns if "node" in c.lower()]
+
+    for col in node_cols:
+        # Only process numeric columns
+        if df[col].dtype in ["int32", "int64", "float64"]:
+            if df[col].isin([OLD_NODE]).any():
+                updated = True
+
+                # Copy rows where node == 1032
+                df_copy = df[df[col] == OLD_NODE].copy()
+                df_copy[col] = NEW_NODE      # replace with 1017
+
+                # Append to original dataframe
+                df = pd.concat([df, df_copy], ignore_index=True)
+
+                print(f"  - Updated column: {col}")
+
+    # Save output parquet
+    out_name = os.path.basename(file_path)
+    out_path = os.path.join(OUTPUT_DIR, out_name)
+    df.to_parquet(out_path, index=False)
+
+    print(f"Saved updated file to: {out_path}\n")
+
+
+# --------------------------
+# Process all parquet files
+# --------------------------
+for fname in os.listdir(INPUT_DIR):
+    if fname.endswith(".parquet"):
+        update_parquet(os.path.join(INPUT_DIR, fname))
+
+print("✔ All DO-daily parameter files updated successfully.")
+
 import pandas as pd
 
 # ---------------------------
