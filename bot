@@ -1,1 +1,56 @@
-a
+import pandas as pd
+
+# ---------------------------
+# 1. Load all 3 parquet files
+# ---------------------------
+df_loc = pd.read_parquet("do_params_dmd_loc.parquet")
+df_lane = pd.read_parquet("do_params_lane.parquet")
+df_rev = pd.read_parquet("do_params_node_rev.parquet")
+
+
+# =====================================================
+# RULE 1 — do_params_dmd_loc : add 1017 information
+# =====================================================
+# You mentioned 1017 information is used to fill:
+# - fulfill_nodes_priority
+# - ss_node_by_seg
+# If these columns exist, fill them with default values.
+
+if "fulfill_nodes_priority" in df_loc.columns:
+    df_loc["fulfill_nodes_priority"] = df_loc["fulfill_nodes_priority"].fillna("1017")
+
+if "ss_node_by_seg" in df_loc.columns:
+    df_loc["ss_node_by_seg"] = df_loc["ss_node_by_seg"].fillna("1017")
+
+
+# =====================================================
+# RULE 2 — do_params_lane : duplicate rows where rw_node_cd == 1032
+# =====================================================
+
+df_lane_copy = df_lane[df_lane["rw_node_cd"] == 1032].copy()
+df_lane_copy["rw_node_cd"] = 1017        # overwrite with new node
+df_lane_final = pd.concat([df_lane, df_lane_copy], ignore_index=True)
+
+
+# =====================================================
+# RULE 3 — do_params_node_rev : same logic as lane
+# =====================================================
+
+df_rev_copy = df_rev[df_rev["rev_node_cd"] == 1032].copy()
+df_rev_copy["rev_node_cd"] = 1017
+df_rev_final = pd.concat([df_rev, df_rev_copy], ignore_index=True)
+
+
+# =====================================================
+# Save output
+# =====================================================
+
+df_loc.to_parquet("output_do_params_dmd_loc.parquet", index=False)
+df_lane_final.to_parquet("output_do_params_lane.parquet", index=False)
+df_rev_final.to_parquet("output_do_params_node_rev.parquet", index=False)
+
+df_loc.to_csv("output_do_params_dmd_loc.csv", index=False)
+df_lane_final.to_csv("output_do_params_lane.csv", index=False)
+df_rev_final.to_csv("output_do_params_node_rev.csv", index=False)
+
+print("Processing complete.")
