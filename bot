@@ -1,6 +1,110 @@
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+import ast
+
+# ---------------------------------------
+# LOAD ORIGINAL FILE + SAVE ORIGINAL SCHEMA
+# ---------------------------------------
+input_path = "do_params_dmd_loc.parquet"
+df = pd.read_parquet(input_path)
+
+orig_cols = df.columns.tolist()
+orig_schema = df.dtypes.to_dict()
+
+# ---------------------------------------
+# Convert string arrays -> real lists
+# ---------------------------------------
+def ensure_list(x):
+    if isinstance(x, str):
+        try:
+            return ast.literal_eval(x)
+        except:
+            return x
+    return x
+
+df["fulfill_nodes_priority"] = df["fulfill_nodes_priority"].apply(ensure_list)
+
+# ---------------------------------------
+# RULE 1: Duplicate DL_1032 → DL_1017 (temp)
+# ---------------------------------------
+rows_1032 = df[df["dmd_loc_cd"] == "DL_1032"].copy()
+rows_1032["dmd_loc_cd"] = "DL_1017"   # temporary name before final rename
+df = pd.concat([df, rows_1032], ignore_index=True)
+
+
+# ---------------------------------------
+# RULE 2: Modify fulfill_nodes_priority
+# ---------------------------------------
+def update_priority(row):
+    arr = row["fulfill_nodes_priority"]
+
+    if isinstance(arr, list):
+        # remove any existing 1017
+        arr = [x for x in arr if x != 1017]
+
+        # insert depending on location
+        if row["dmd_loc_cd"] == "DL_1017":
+            return [1017] + arr
+        else:
+            return arr + [1017]
+
+    return arr
+
+df["fulfill_nodes_priority"] = df.apply(update_priority, axis=1)
+
+
+# ---------------------------------------
+# RULE 3: Update ss_node_by_seg
+# ---------------------------------------
+def update_seg(row):
+    seg = row["ss_node_by_seg"]
+    loc = row["dmd_loc_cd"]
+
+    if isinstance(seg, dict) and loc == "DL_1017":
+        s = dict(seg)
+        s["B"] = "1017"
+        s["L"] = "1032"
+        s["T"] = "1032"
+        return s
+
+    return seg
+
+df["ss_node_by_seg"] = df.apply(update_seg, axis=1)
+
+
+# ---------------------------------------
+# RULE 4: Rename dmd_loc_cd from DL_1017 → 1017_DL
+# ---------------------------------------
+df["dmd_loc_cd"] = df["dmd_loc_cd"].replace({"DL_1017": "1017_DL"})
+
+
+# ---------------------------------------
+# RESTORE ORIGINAL COLUMN ORDER + DTYPES
+# ---------------------------------------
+df = df[orig_cols]
+
+for col, dtype in orig_schema.items():
+    try:
+        df[col] = df[col].astype(dtype)
+    except Exception:
+        # for object, list, dict keep original format
+        pass
+
+
+# ---------------------------------------
+# SAVE OUTPUT
+# ---------------------------------------
+output_path = "output_files/do_params_dmd_loc.parquet"
+table = pa.Table.from_pandas(df, preserve_index=False)
+pq.write_table(table, output_path)
+
+print("Saved updated do_params_dmd_loc with original schema and formats.")
+print("Output:", output_path)
+
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 # ---------------------------------------
 # LOAD ORIGINAL + STORE ORIGINAL SCHEMA
