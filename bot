@@ -3,6 +3,126 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import ast
 
+# ================================
+# 1. LOAD ORIGINAL FILE
+# ================================
+
+input_path = "do_params_dmd_loc.parquet"
+df = pd.read_parquet(input_path)
+
+orig_cols = df.columns.tolist()
+orig_schema = df.dtypes.to_dict()
+
+
+# ================================
+# 2. ENSURE LIST FORMAT
+# ================================
+
+def ensure_list(x):
+    if isinstance(x, str):
+        try:
+            return ast.literal_eval(x)
+        except:
+            return x
+    return x
+
+df["fulfill_nodes_priority"] = df["fulfill_nodes_priority"].apply(ensure_list)
+
+
+# ================================
+# 3. RULE 1: Duplicate 1032_DL → 1017_DL
+# ================================
+
+rows_1032 = df[df["dmd_loc_cd"] == "1032_DL"].copy()
+rows_1032["dmd_loc_cd"] = "1017_DL"
+df = pd.concat([df, rows_1032], ignore_index=True)
+
+
+# ================================
+# 4. RULE 2: Update fulfill_nodes_priority
+# ================================
+
+def update_priority(row):
+    arr = row["fulfill_nodes_priority"]
+
+    # standardize all to string
+    arr = [str(x) for x in arr]
+
+    # remove existing '1017'
+    arr = [x for x in arr if x != "1017"]
+
+    # NEW LOGIC:
+    # If 1017_DL → insert at FRONT
+    if row["dmd_loc_cd"] == "1017_DL":
+        arr = ["1017"] + arr
+    else:
+        # If not 1017_DL → append 1017 to END
+        arr = arr + ["1017"]
+
+    return arr
+
+df["fulfill_nodes_priority"] = df.apply(update_priority, axis=1)
+
+
+# ================================
+# 5. RULE 3: Update ss_node_by_seg
+# ================================
+
+def update_seg(row):
+    seg = row["ss_node_by_seg"]
+    if isinstance(seg, dict) and row["dmd_loc_cd"] == "1017_DL":
+        seg = dict(seg)
+        seg["B"] = "1017"
+        seg["L"] = "1032"
+        seg["T"] = "1032"
+    return seg
+
+df["ss_node_by_seg"] = df.apply(update_seg, axis=1)
+
+
+# ================================
+# 6. RESTORE ORIGINAL COLUMN ORDER & SCHEMA
+# ================================
+
+df = df[orig_cols]
+
+for col, dtype in orig_schema.items():
+    try:
+        df[col] = df[col].astype(dtype)
+    except:
+        pass
+
+
+# ================================
+# 7. SAVE OUTPUT
+# ================================
+
+output_path = "output_files/do_params_dmd_loc.parquet"
+table = pa.Table.from_pandas(df, preserve_index=False)
+pq.write_table(table, output_path)
+
+print("Saved updated do_params_dmd_loc.parquet with new logic.")
+
+
+# ================================
+# 8. OPTIONAL QUICK VERIFY
+# ================================
+
+df_verify = pd.read_parquet(output_path)
+
+print("\nCheck 1017_DL rows:")
+print(df_verify[df_verify["dmd_loc_cd"]=="1017_DL"][["dmd_loc_cd","fulfill_nodes_priority"]].head())
+
+print("\nCheck NON-1017 rows to confirm 1017 appended:")
+print(df_verify[df_verify["dmd_loc_cd"]!="1017_DL"][["dmd_loc_cd","fulfill_nodes_priority"]].head())
+
+
+
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+import ast
+
 # Load original DF (once!)
 input_path = "do_params_dmd_loc.parquet"
 df = pd.read_parquet(input_path)
