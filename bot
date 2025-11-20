@@ -1,3 +1,30 @@
+SELECT
+    current_dt,
+    MEME_CK,
+    cspd_cat,
+    mepe_eff_dt,
+    mepe_term_dt,
+    grgr_ck,
+    MEPE_ELIG_IND,
+    SSBB_CK,
+    MEME_SFX,
+    HASH(MEME_FIRST_NAME) AS MEME_FIRST_NAME,
+    HASH(MEME_MID_INIT) AS MEME_MID_INIT,
+    HASH(MEME_LAST_NAME) AS MEME_LAST_NAME,
+    HASH(MEME_SFX) AS MEME_SFX,
+    REGEXP_REPLACE(TO_VARCHAR(MEME_BIRTH_DT), '[0-9]', 'X') AS MEME_BIRTH_DT,
+    AGE,
+    HASH(MEME_MARITAL_STATUS) AS MEME_MARITAL_STATUS,
+    HASH(SSBB_ID) AS SSBB_ID,
+    GRGR_ID,
+    GRGR_NAME,
+    ECM_IND,
+    RISK_SCORE,
+    RISK_FACTORS,
+    MATERNAL_TYPE
+FROM stage_adb.pregnancy.medi_cal_maternal_risk
+LIMIT 15;
+
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
