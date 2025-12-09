@@ -1,3 +1,35 @@
+from pyspark.sql import functions as F
+from pyspark.sql import SparkSession
+import shutil
+import os
+
+final_path = "/dbfs/FileStore/your_output.csv"     # final single CSV file
+temp_path = "/dbfs/FileStore/tmp_csv_output"       # temporary folder
+
+# 1. Write to temporary folder as 1 part file
+sdf.coalesce(1).write.mode("overwrite").option("header", True).csv(temp_path)
+
+# 2. Find the part-00000 file Databricks created
+for file in os.listdir(temp_path):
+    if file.startswith("part-") and file.endswith(".csv"):
+        part_file = file
+        break
+
+# 3. Move/rename the part file into a single real CSV
+shutil.move(f"{temp_path}/{part_file}", final_path)
+
+# 4. Clean up temp folder
+shutil.rmtree(temp_path)
+
+print("CSV saved at:", final_path)
+
+import datetime
+today = datetime.date.today().strftime("%Y%m%d")
+final_path = f"/dbfs/FileStore/output_{today}.csv"
+
+
+
+
 SELECT
     current_dt,
     MEME_CK,
