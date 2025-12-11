@@ -1,3 +1,12 @@
+deploy to prod:
+  - step:
+      name: Deploying to Prod
+      script:
+        - echo "Starting PROD deployment..."
+        - pip install databricks-cli
+        - python databricks/src/notebooks/write_pregnancy_table_to_prod_adb.py
+
+
 import pandas as pd
 
 df = spark.table(RAG_TABLE).select("summary_text", "embedding")
