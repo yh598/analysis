@@ -1,3 +1,49 @@
+import pandas as pd
+
+df = spark.table(RAG_TABLE).select("summary_text", "embedding")
+pdf = df.toPandas()
+
+import faiss
+import numpy as np
+import os
+
+os.makedirs(VECTOR_DIR, exist_ok=True)
+
+emb_matrix = np.vstack(pdf["embedding"].values).astype("float32")
+
+dimension = emb_matrix.shape[1]
+index = faiss.IndexFlatL2(dimension)
+index.add(emb_matrix)
+
+faiss.write_index(index, VECTOR_INDEX_FILE)
+pdf.to_pickle(VECTOR_DATA_FILE)
+
+print("FAISS index saved:", VECTOR_INDEX_FILE)
+print("Metadata saved:", VECTOR_DATA_FILE)
+
+# Load
+index = faiss.read_index(VECTOR_INDEX_FILE)
+pdf = pd.read_pickle(VECTOR_DATA_FILE)
+
+from sentence_transformers import SentenceTransformer
+model = SentenceTransformer("all-MiniLM-L6-v2")
+
+def embed_query(text):
+    return model.encode(text).astype("float32").reshape(1, -1)
+
+def vector_search(query, k=5):
+    qvec = embed_query(query)
+    distances, indices = index.search(qvec, k)
+
+    results = pdf.iloc[indices[0]].copy()
+    results["distance"] = distances[0]
+    return results[["summary_text", "distance"]]
+
+vector_search("what is mesh gauge?", k=5)
+
+
+
+
 from pyspark.sql import functions as F
 from pyspark.sql import SparkSession
 import shutil
