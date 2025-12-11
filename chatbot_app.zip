@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+ <head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Language" content="en">
+  <title>Databricks - Sign In</title>
+  <meta name="viewport" content="width=960">
+  <link rel="icon" type="image/png" href="https://databricks-ui-assets.azureedge.net/favicon.ico">
+  <meta http-equiv="content-type" content="text/html; charset=UTF8">
+  <script id="__databricks_react_script"></script>
+  <script>window.__DATABRICKS_SAFE_FLAGS__={"databricks.fe.infra.fixConfigPrefetch":true,"databricks.fe.infra.useReact18":true,"databricks.fe.infra.useNewFetchSettingsFunc":false,"databricks.fe.infra.useApollo3_12":false,"databricks.fe.infra.shouldNotAwaitConfigForHomepage":false,"databricks.fe.infra.disableShadowRoot_mlflow":false,"databricks.fe.infra.disableShadowRoot_redash":false,"databricks.fe.infra.useReact18NewAPI":false,"databricks.fe.infra.enableStartupAppInitSNRAlerting":true,"databricks.fe.infra.enableImplicitContext":false,"databricks.fe.infra.enableBlockingTelemetryByUserAgent":true},window.__DATABRICKS_CONFIG__={"tabStartTimestampMillis":1744067725564,"isCuttingEdge":false,"publicPath":{"mlflow":"https://databricks-ui-assets.azureedge.net/","dbsql":"https://databricks-ui-assets.azureedge.net/","feature-store":"https://databricks-ui-assets.azureedge.net/","monolith":"https://databricks-ui-assets.azureedge.net/","jaws":"https://databricks-ui-assets.azureedge.net/"},"isSpogDomain":false,"enablePrPreview":"","enableGitBisect":""},window.__databricks_uiDeployableToCommitHash={monolith:"342e1dbd865da4efc3be85e35e9ee0b78d502e80"}</script>
+  <link rel="icon" href="https://databricks-ui-assets.azureedge.net/favicon.ico">
+  <script>
+  function setNoCdnAndReload() {
+      document.cookie = `x-databricks-cdn-inaccessible=true; path=/; max-age=86400`;
+      const metric = 'cdnFallbackOccurred';
+      const browserUserAgent = navigator.userAgent;
+      const browserTabId = window.browserTabId;
+      const performanceEntry = performance.getEntriesByType('resource').filter(e => e.initiatorType === 'script').slice(-1)[0]
+      sessionStorage.setItem('databricks-cdn-fallback-telemetry-key', JSON.stringify({ tags: { browserUserAgent, browserTabId }, performanceEntry}));
+      window.location.reload();
+  }
+</script>
+  <script>
+  // Set a manual timeout for dropped packets to CDN
+  function loadScriptWithTimeout(src, timeout) {
+     return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+          script.defer = true;
+          script.src = src;
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+          setTimeout(() => {
+              reject(new Error('Script load timeout'));
+          }, timeout);
+      });
+  }
+  loadScriptWithTimeout('https://databricks-ui-assets.azureedge.net/static/js/login/login.f4116328.js', 10000).catch(setNoCdnAndReload);
+</script>
+ </head>
+ <body class="light-mode">
+  <uses-legacy-bootstrap>
+   <div id="login-page"></div>
+  </uses-legacy-bootstrap>
+  <script>const telemetryEndpoint="/telemetry-unauth?t=",uiModuleName="workspaceLogin";function shouldIgnoreError(e){return!1}function generateUuidV4(){const e=window.crypto?.randomUUID?.();return e||"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,(e=>{const n=16*Math.random()|0;return("x"===e?n:3&n|8).toString(16)}))}function networkConnectivityTags(){const e=window.navigator.onLine,n=window.navigator.connection?.rtt??-1,t=window.navigator.connection?.downlink??-1;return{browserNavigatorOnline:e,browserConnectionEstimatedRtt:n,browserConnectionEstimatedDownlink:t,browserConnected:e&&n>0&&t>0}}window.__databricks_networkConnectivityTags=networkConnectivityTags;const browserUserAgent=navigator.userAgent;let shouldLogTelemetry=!0;if(window.__DATABRICKS_SAFE_FLAGS__?.["databricks.fe.infra.enableBlockingTelemetryByUserAgent"]){const e=["bingbot","RedTeamGlobal"].some((e=>browserUserAgent.includes(e)));shouldLogTelemetry=!e}function getParams(e){let n;const t=/\+/g,o=/([^&=]+)=?([^&]*)/g,r=function(e){return decodeURIComponent(e.replace(t," "))},i={};for(n=o.exec(e);n;)i[r(n[1])]=r(n[2]),n=o.exec(e);return i}function getWorkspaceParam(){const e=getParams(window.location.search.substr(1)),n=/^\d+/.exec(e?.o??"");return null===n?void 0:n[0]}function createTelemetryRequestBody(e,n={},t=null){const o=Date.now(),r={eventId:generateUuidV4(),metric:e,tags:{...n,...networkConnectivityTags(),browserTabId:window.browserTabId,browserUserAgent:browserUserAgent,tabStartTimestampMillis:window.tabStartTimestampMillis,eventWindowTime:window.performance.now()},ts:o};return t&&(r.blob=t),JSON.stringify({uploadTime:o,items:[JSON.stringify(r)]})}function recordTelemetry(e,n={},t=""){if(shouldLogTelemetry){const o=getWorkspaceParam(),r=o?{"X-Databricks-Org-Id":o.toString()}:{},i={method:"POST",credentials:"include",body:createTelemetryRequestBody(e,n,t),headers:r};fetch(telemetryEndpoint+Date.now(),i)}}Object.defineProperty(window,"browserTabId",{value:generateUuidV4()}),Object.defineProperty(window,"tabStartTimestampMillis",{value:window.__DATABRICKS_CONFIG__?.tabStartTimestampMillis??Date.now()}),window.recordTelemetry=recordTelemetry,recordTelemetry("uiInit",{uiModule:uiModuleName,eventId:"init",eventClientSource:uiModuleName,eventType:"init"});let logCount=0;function error_handler(e,n,t,o,r){logCount++>4||shouldIgnoreError(e)||recordTelemetry("uncaughtJsException",{eventType:"jsExceptionV3",jsExceptionMessage:e,jsExceptionSource:n,jsExceptionLineno:t,jsExceptionColno:o,jsExceptionBeforeInit:!0},r&&r.stack&&r.stack.toString())}window.onerror=error_handler,window.onunhandledrejection=function(e){error_handler(String(e.reason),null,null,null,e.reason)};let hasLoggedPageExitBeforeAppInitComplete=!1;function sendBeaconOnPageExit(e){if(navigator.sendBeacon&&shouldLogTelemetry&&!hasLoggedPageExitBeforeAppInitComplete){const n=e&&e.type||"unknown",t=(Date.now(),createTelemetryRequestBody("uiInit",{eventType:"pageExitBeforeAppInitComplete",eventName:n,eventClientSource:uiModuleName}));navigator.sendBeacon(telemetryEndpoint+Date.now(),t),hasLoggedPageExitBeforeAppInitComplete=!0}}function isNetworkScriptLoadIssue(e){if(!e)return!1;const{name:n,responseStatus:t}=e,o=void 0!==t&&[0].includes(t),r=n?.includes(".js")&&n.includes("&retry-attempt=3"),i=/(?:main|login)(?:\.[a-zA-Z0-9]+)?\.js/.test(n);return o&&(r||i)}function getUnsuccessfulScriptLoadResponseStatusCodes(){const e={};return performance.getEntriesByType("resource").filter((e=>"script"===e.initiatorType||"link"===e.initiatorType)).map((e=>isNetworkScriptLoadIssue(e)?[e.name,e.responseStatus]:void 0)).filter(Boolean).forEach((([n,t])=>{void 0===e[n]&&(e[n]=[]),e[n].push(t)})),e}window.addEventListener("beforeunload",sendBeaconOnPageExit),window.addEventListener("unload",sendBeaconOnPageExit),window.addEventListener("pagehide",sendBeaconOnPageExit),window.cleanupAfterAppInit=()=>{window.removeEventListener("beforeunload",sendBeaconOnPageExit),window.removeEventListener("unload",sendBeaconOnPageExit),window.removeEventListener("pagehide",sendBeaconOnPageExit)},window.__DATABRICKS_SAFE_FLAGS__?.["databricks.fe.infra.enableStartupAppInitSNRAlerting"]&&(window.startupAppInitSNR=setInterval((()=>{const e=Object.entries(getUnsuccessfulScriptLoadResponseStatusCodes());if(e.length>0){const n=JSON.stringify({failedNetworkScripts:e}),t={uiModule:uiModuleName,eventId:"ClientNetworkScriptLoadFailure",eventClientSource:uiModuleName,eventType:"clientNetworkScriptLoadFailure"};recordTelemetry("uiInit",t),recordTelemetry("codeMonCounter",t,n),clearInterval(window.startupAppInitSNR),window?.cleanupAfterAppInit(),clearTimeout(window?.startupHangTimer)}}),1e3))</script>
+ </body>
+</html>
