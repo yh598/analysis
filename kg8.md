@@ -1,0 +1,360 @@
+# Cosmos DB Gremlin — Run One by One (Red / Yellow / Blue)
+
+Your graph partition key is **/pk**.
+
+Tip: Cosmos DB Gremlin portal does **not** accept semicolons `;` and can be picky about `filter(<traversal>)`. Use `where(...)` and chain with `.` only.
+
+Tip: In Azure portal Data Explorer, you must run one Gremlin query per execution.
+This guide packages each query as its own block.
+
+---
+
+## 0 Cleanup
+```gremlin
+g.V().drop()
+```
+
+---
+
+## 1 Create vertices
+```gremlin
+g.inject(1)
+
+.sideEffect(__.addV('member').property('id','m_M0001').property('pk','M0001').property('memberId','M0001').property('state','CA'))
+.sideEffect(__.addV('member').property('id','m_M0002').property('pk','M0002').property('memberId','M0002').property('state','CA'))
+.sideEffect(__.addV('member').property('id','m_M0003').property('pk','M0003').property('memberId','M0003').property('state','NV'))
+.sideEffect(__.addV('member').property('id','m_M0004').property('pk','M0004').property('memberId','M0004').property('state','CA'))
+.sideEffect(__.addV('member').property('id','m_M0005').property('pk','M0005').property('memberId','M0005').property('state','CA'))
+.sideEffect(__.addV('member').property('id','m_M0006').property('pk','M0006').property('memberId','M0006').property('state','CA'))
+
+.sideEffect(__.addV('provider').property('id','p_P0001').property('pk','P0001').property('providerId','P0001').property('npi','1111111111').property('name','Dr Alpha').property('specialty','PT'))
+.sideEffect(__.addV('provider').property('id','p_P0002').property('pk','P0002').property('providerId','P0002').property('npi','2222222222').property('name','Dr Beta').property('specialty','Chiro'))
+.sideEffect(__.addV('provider').property('id','p_P0003').property('pk','P0003').property('providerId','P0003').property('npi','3333333333').property('name','Dr Gamma').property('specialty','PrimaryCare'))
+.sideEffect(__.addV('provider').property('id','p_P0004').property('pk','P0004').property('providerId','P0004').property('npi','4444444444').property('name','Dr Delta').property('specialty','Derm'))
+
+.sideEffect(__.addV('facility').property('id','f_F0001').property('pk','shared').property('facilityId','F0001').property('name','Sunrise Clinic').property('city','Oakland').property('state','CA'))
+.sideEffect(__.addV('facility').property('id','f_F0002').property('pk','shared').property('facilityId','F0002').property('name','Bay Rehab').property('city','Walnut Creek').property('state','CA'))
+.sideEffect(__.addV('facility').property('id','f_F0003').property('pk','shared').property('facilityId','F0003').property('name','North Care').property('city','Sacramento').property('state','CA'))
+
+.sideEffect(__.addV('phone').property('id','ph_9250000001').property('pk','shared').property('number','9250000001'))
+.sideEffect(__.addV('phone').property('id','ph_5100000002').property('pk','shared').property('number','5100000002'))
+.sideEffect(__.addV('phone').property('id','ph_4080000003').property('pk','shared').property('number','4080000003'))
+
+.sideEffect(__.addV('address').property('id','ad_A1').property('pk','shared').property('addrKey','A1').property('line1','101 Pringle Ave').property('city','Walnut Creek').property('state','CA').property('zip','94596'))
+.sideEffect(__.addV('address').property('id','ad_A2').property('pk','shared').property('addrKey','A2').property('line1','50 Main St').property('city','Oakland').property('state','CA').property('zip','94607'))
+
+.sideEffect(__.addV('bank').property('id','bk_B1').property('pk','shared').property('fingerprint','BANKFP001'))
+.sideEffect(__.addV('bank').property('id','bk_B2').property('pk','shared').property('fingerprint','BANKFP002'))
+
+.sideEffect(__.addV('diagnosis').property('id','dx_M545').property('pk','shared').property('code','M54.5').property('name','Low back pain'))
+.sideEffect(__.addV('diagnosis').property('id','dx_R51').property('pk','shared').property('code','R51').property('name','Headache'))
+
+.sideEffect(__.addV('procedure').property('id','pr_97110').property('pk','shared').property('code','97110').property('name','Therapeutic exercises'))
+.sideEffect(__.addV('procedure').property('id','pr_98941').property('pk','shared').property('code','98941').property('name','Chiropractic manipulative'))
+.sideEffect(__.addV('procedure').property('id','pr_99213').property('pk','shared').property('code','99213').property('name','Office visit'))
+.sideEffect(__.addV('procedure').property('id','pr_99215').property('pk','shared').property('code','99215').property('name','High complexity office visit'))
+
+.sideEffect(__.addV('drug').property('id','dr_0001').property('pk','shared').property('ndc','0001').property('name','Drug A'))
+.sideEffect(__.addV('drug').property('id','dr_0002').property('pk','shared').property('ndc','0002').property('name','Drug B'))
+
+.sideEffect(__.addV('claim').property('id','c_C0001').property('pk','P0001').property('claimId','C0001').property('memberId','M0001').property('providerId','P0001').property('serviceDate','2026-01-05').property('amount',980).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0002').property('pk','P0001').property('claimId','C0002').property('memberId','M0001').property('providerId','P0001').property('serviceDate','2026-01-05').property('amount',980).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0003').property('pk','P0001').property('claimId','C0003').property('memberId','M0002').property('providerId','P0001').property('serviceDate','2026-01-06').property('amount',1240).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0004').property('pk','P0001').property('claimId','C0004').property('memberId','M0002').property('providerId','P0001').property('serviceDate','2026-01-06').property('amount',1240).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0005').property('pk','P0003').property('claimId','C0005').property('memberId','M0003').property('providerId','P0003').property('serviceDate','2026-01-10').property('amount',180).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0006').property('pk','P0003').property('claimId','C0006').property('memberId','M0003').property('providerId','P0003').property('serviceDate','2026-01-10').property('amount',180).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0007').property('pk','P0002').property('claimId','C0007').property('memberId','M0004').property('providerId','P0002').property('serviceDate','2026-01-12').property('amount',600).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0008').property('pk','P0002').property('claimId','C0008').property('memberId','M0004').property('providerId','P0002').property('serviceDate','2026-01-13').property('amount',600).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0009').property('pk','P0003').property('claimId','C0009').property('memberId','M0003').property('providerId','P0003').property('serviceDate','2026-01-11').property('amount',420).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0010').property('pk','P0004').property('claimId','C0010').property('memberId','M0005').property('providerId','P0004').property('serviceDate','2026-01-14').property('amount',210).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0011').property('pk','P0004').property('claimId','C0011').property('memberId','M0006').property('providerId','P0004').property('serviceDate','2026-01-14').property('amount',190).property('status','submitted'))
+
+.count()
+```
+
+---
+
+## 2 Create edges
+```gremlin
+g.inject(1)
+
+.sideEffect(__.V(['M0001','m_M0001']).addE('shares_phone').to(__.V(['shared','ph_9250000001'])))
+.sideEffect(__.V(['M0002','m_M0002']).addE('shares_phone').to(__.V(['shared','ph_9250000001'])))
+.sideEffect(__.V(['P0001','p_P0001']).addE('shares_phone').to(__.V(['shared','ph_9250000001'])))
+.sideEffect(__.V(['M0003','m_M0003']).addE('shares_phone').to(__.V(['shared','ph_5100000002'])))
+.sideEffect(__.V(['M0004','m_M0004']).addE('shares_phone').to(__.V(['shared','ph_4080000003'])))
+
+.sideEffect(__.V(['M0001','m_M0001']).addE('shares_address').to(__.V(['shared','ad_A1'])))
+.sideEffect(__.V(['M0002','m_M0002']).addE('shares_address').to(__.V(['shared','ad_A1'])))
+.sideEffect(__.V(['M0003','m_M0003']).addE('shares_address').to(__.V(['shared','ad_A2'])))
+
+.sideEffect(__.V(['P0001','p_P0001']).addE('shares_bank').to(__.V(['shared','bk_B1'])))
+.sideEffect(__.V(['P0002','p_P0002']).addE('shares_bank').to(__.V(['shared','bk_B1'])))
+.sideEffect(__.V(['P0003','p_P0003']).addE('shares_bank').to(__.V(['shared','bk_B2'])))
+
+.sideEffect(__.V(['P0001','c_C0001']).addE('rendered_by').to(__.V(['P0001','p_P0001'])))
+.sideEffect(__.V(['P0001','c_C0001']).addE('submitted_by').to(__.V(['M0001','m_M0001'])))
+.sideEffect(__.V(['P0001','c_C0001']).addE('at').to(__.V(['shared','f_F0001'])))
+.sideEffect(__.V(['P0001','c_C0001']).addE('has_diagnosis').to(__.V(['shared','dx_M545'])))
+.sideEffect(__.V(['P0001','c_C0001']).addE('has_procedure').to(__.V(['shared','pr_97110'])).property('units',6))
+
+.sideEffect(__.V(['P0001','c_C0002']).addE('rendered_by').to(__.V(['P0001','p_P0001'])))
+.sideEffect(__.V(['P0001','c_C0002']).addE('submitted_by').to(__.V(['M0001','m_M0001'])))
+.sideEffect(__.V(['P0001','c_C0002']).addE('at').to(__.V(['shared','f_F0001'])))
+.sideEffect(__.V(['P0001','c_C0002']).addE('has_diagnosis').to(__.V(['shared','dx_M545'])))
+.sideEffect(__.V(['P0001','c_C0002']).addE('has_procedure').to(__.V(['shared','pr_97110'])).property('units',6))
+
+.sideEffect(__.V(['P0001','c_C0003']).addE('rendered_by').to(__.V(['P0001','p_P0001'])))
+.sideEffect(__.V(['P0001','c_C0003']).addE('submitted_by').to(__.V(['M0002','m_M0002'])))
+.sideEffect(__.V(['P0001','c_C0003']).addE('at').to(__.V(['shared','f_F0001'])))
+.sideEffect(__.V(['P0001','c_C0003']).addE('has_diagnosis').to(__.V(['shared','dx_M545'])))
+.sideEffect(__.V(['P0001','c_C0003']).addE('has_procedure').to(__.V(['shared','pr_97110'])).property('units',8))
+
+.sideEffect(__.V(['P0001','c_C0004']).addE('rendered_by').to(__.V(['P0001','p_P0001'])))
+.sideEffect(__.V(['P0001','c_C0004']).addE('submitted_by').to(__.V(['M0002','m_M0002'])))
+.sideEffect(__.V(['P0001','c_C0004']).addE('at').to(__.V(['shared','f_F0001'])))
+.sideEffect(__.V(['P0001','c_C0004']).addE('has_diagnosis').to(__.V(['shared','dx_M545'])))
+.sideEffect(__.V(['P0001','c_C0004']).addE('has_procedure').to(__.V(['shared','pr_97110'])).property('units',8))
+
+.sideEffect(__.V(['P0003','c_C0005']).addE('rendered_by').to(__.V(['P0003','p_P0003'])))
+.sideEffect(__.V(['P0003','c_C0005']).addE('submitted_by').to(__.V(['M0003','m_M0003'])))
+.sideEffect(__.V(['P0003','c_C0005']).addE('at').to(__.V(['shared','f_F0001'])))
+.sideEffect(__.V(['P0003','c_C0005']).addE('has_diagnosis').to(__.V(['shared','dx_R51'])))
+.sideEffect(__.V(['P0003','c_C0005']).addE('has_procedure').to(__.V(['shared','pr_99213'])).property('units',1))
+
+.sideEffect(__.V(['P0003','c_C0006']).addE('rendered_by').to(__.V(['P0003','p_P0003'])))
+.sideEffect(__.V(['P0003','c_C0006']).addE('submitted_by').to(__.V(['M0003','m_M0003'])))
+.sideEffect(__.V(['P0003','c_C0006']).addE('at').to(__.V(['shared','f_F0002'])))
+.sideEffect(__.V(['P0003','c_C0006']).addE('has_diagnosis').to(__.V(['shared','dx_R51'])))
+.sideEffect(__.V(['P0003','c_C0006']).addE('has_procedure').to(__.V(['shared','pr_99213'])).property('units',1))
+
+.sideEffect(__.V(['P0002','c_C0007']).addE('rendered_by').to(__.V(['P0002','p_P0002'])))
+.sideEffect(__.V(['P0002','c_C0007']).addE('submitted_by').to(__.V(['M0004','m_M0004'])))
+.sideEffect(__.V(['P0002','c_C0007']).addE('at').to(__.V(['shared','f_F0002'])))
+.sideEffect(__.V(['P0002','c_C0007']).addE('has_diagnosis').to(__.V(['shared','dx_M545'])))
+.sideEffect(__.V(['P0002','c_C0007']).addE('has_procedure').to(__.V(['shared','pr_98941'])).property('units',10))
+.sideEffect(__.V(['P0002','c_C0007']).addE('has_drug').to(__.V(['shared','dr_0001'])).property('qty',30))
+
+.sideEffect(__.V(['P0002','c_C0008']).addE('rendered_by').to(__.V(['P0002','p_P0002'])))
+.sideEffect(__.V(['P0002','c_C0008']).addE('submitted_by').to(__.V(['M0004','m_M0004'])))
+.sideEffect(__.V(['P0002','c_C0008']).addE('at').to(__.V(['shared','f_F0002'])))
+.sideEffect(__.V(['P0002','c_C0008']).addE('has_diagnosis').to(__.V(['shared','dx_M545'])))
+.sideEffect(__.V(['P0002','c_C0008']).addE('has_procedure').to(__.V(['shared','pr_98941'])).property('units',10))
+.sideEffect(__.V(['P0002','c_C0008']).addE('has_drug').to(__.V(['shared','dr_0002'])).property('qty',30))
+
+.sideEffect(__.V(['P0003','c_C0009']).addE('rendered_by').to(__.V(['P0003','p_P0003'])))
+.sideEffect(__.V(['P0003','c_C0009']).addE('submitted_by').to(__.V(['M0003','m_M0003'])))
+.sideEffect(__.V(['P0003','c_C0009']).addE('at').to(__.V(['shared','f_F0003'])))
+.sideEffect(__.V(['P0003','c_C0009']).addE('has_diagnosis').to(__.V(['shared','dx_R51'])))
+.sideEffect(__.V(['P0003','c_C0009']).addE('has_procedure').to(__.V(['shared','pr_99215'])).property('units',1))
+
+.sideEffect(__.V(['P0004','c_C0010']).addE('rendered_by').to(__.V(['P0004','p_P0004'])))
+.sideEffect(__.V(['P0004','c_C0010']).addE('submitted_by').to(__.V(['M0005','m_M0005'])))
+.sideEffect(__.V(['P0004','c_C0010']).addE('at').to(__.V(['shared','f_F0001'])))
+.sideEffect(__.V(['P0004','c_C0010']).addE('has_diagnosis').to(__.V(['shared','dx_R51'])))
+.sideEffect(__.V(['P0004','c_C0010']).addE('has_procedure').to(__.V(['shared','pr_99213'])).property('units',1))
+
+.sideEffect(__.V(['P0004','c_C0011']).addE('rendered_by').to(__.V(['P0004','p_P0004'])))
+.sideEffect(__.V(['P0004','c_C0011']).addE('submitted_by').to(__.V(['M0006','m_M0006'])))
+.sideEffect(__.V(['P0004','c_C0011']).addE('at').to(__.V(['shared','f_F0003'])))
+.sideEffect(__.V(['P0004','c_C0011']).addE('has_diagnosis').to(__.V(['shared','dx_M545'])))
+.sideEffect(__.V(['P0004','c_C0011']).addE('has_procedure').to(__.V(['shared','pr_99213'])).property('units',1))
+
+.count()
+```
+
+---
+
+## 3 Reset all nodes to green
+```gremlin
+g.V().
+  property('risk_level','low_risk').
+  property('risk_score',10).
+  property('risk_reason','baseline').
+  property('risk_rule','').
+  property('ui_color','green').
+  count()
+```
+
+---
+
+## 4 Mark known fraud as red
+```gremlin
+g.inject(1)
+ .sideEffect(
+   __.V(['P0002','p_P0002']).
+     property('fraud_case',true).
+     property('risk_level','confirmed_fraud').
+     property('risk_score',100).
+     property('risk_reason','known_fraud_case').
+     property('risk_rule','known_fraud').
+     property('ui_color','red')
+ )
+ .sideEffect(
+   __.V(['P0002','c_C0007']).
+     property('fraud_case',true).
+     property('risk_level','confirmed_fraud').
+     property('risk_score',100).
+     property('risk_reason','known_fraud_claim').
+     property('risk_rule','known_fraud').
+     property('ui_color','red')
+ )
+```
+
+---
+
+## 5 Propagate linked risk as yellow (2 hops)
+This Cosmos-friendly version avoids `filter(not(...))`, `coalesce`, and `P.neq`.  
+It relies on Step 3 (everything green) and Step 4 (known fraud becomes red). So we only repaint **green** nodes to yellow.
+
+```gremlin
+g.V().has('fraud_case', true).
+  repeat(bothE().otherV()).times(2).
+  dedup().
+  has('ui_color','green').
+  property('risk_level','linked_to_fraud').
+  property('risk_score',85).
+  property('risk_reason','linked_to_known_fraud').
+  property('risk_rule','linked_2hop').
+  property('ui_color','yellow').
+  count()
+```
+
+
+---
+
+## 6 Rule A Duplicate claim pattern → blue
+Cosmos portal can be picky. This version uses `where(...)` (not `filter(...)`) and Cosmos-friendly `Column.values` / `Scope.local`.
+
+```gremlin
+g.V().hasLabel('claim').
+  project('k','c').
+    by(project('mid','sd','pc').
+        by(values('memberId')).
+        by(values('serviceDate')).
+        by(out('has_procedure').values('code').fold())).
+    by(identity()).
+  group().
+    by(select('k')).
+    by(select('c').fold()).
+  unfold().
+  where(select(Column.values).count(Scope.local).is(P.gt(1))).
+  select(Column.values).unfold().
+  has('ui_color','green').
+  property('risk_level','rule_flag').
+  property('risk_score',60).
+  property('risk_reason','duplicate_claim_pattern').
+  property('risk_rule','duplicate_claim').
+  property('ui_color','blue').
+  values('claimId').fold()
+```
+
+
+
+
+---
+
+## 7 Rule B Shared phone ring → blue
+Important: **no semicolons `;`**. This uses `where(...)` only.
+
+```gremlin
+g.V().hasLabel('phone').
+  where(__.in('shares_phone').hasLabel('member').dedup().count().is(P.gt(1))).
+  where(__.in('shares_phone').hasLabel('provider').dedup().count().is(P.gt(0))).
+  in('shares_phone').hasLabel('member').dedup().
+  in('submitted_by').hasLabel('claim').dedup().
+  has('ui_color','green').
+  property('risk_level','rule_flag').
+  property('risk_score',55).
+  property('risk_reason','shared_phone_ring').
+  property('risk_rule','shared_phone').
+  property('ui_color','blue').
+  values('claimId').fold()
+```
+
+
+
+
+
+---
+
+## 8 Rule C Shared bank across providers → blue
+Important: **no semicolons `;`**. This uses `where(...)` only.
+
+```gremlin
+g.V().hasLabel('bank').
+  where(__.in('shares_bank').hasLabel('provider').dedup().count().is(P.gt(1))).
+  in('shares_bank').hasLabel('provider').dedup().
+  in('rendered_by').hasLabel('claim').dedup().
+  has('ui_color','green').
+  property('risk_level','rule_flag').
+  property('risk_score',65).
+  property('risk_reason','shared_bank_providers').
+  property('risk_rule','shared_bank').
+  property('ui_color','blue').
+  values('claimId').fold()
+```
+
+
+
+
+
+---
+
+## 9 Rule D Same day same member different facilities → blue
+This uses `where(...)` and `Column.values`. No `filter(...)`.
+
+```gremlin
+g.V().hasLabel('claim').
+  group().
+    by(project('mid','sd').by(values('memberId')).by(values('serviceDate'))).
+    by(fold()).
+  unfold().
+  where(
+    select(Column.values).unfold().
+      out('at').values('facilityId').dedup().count().
+      is(P.gt(1))
+  ).
+  select(Column.values).unfold().
+  has('ui_color','green').
+  property('risk_level','rule_flag').
+  property('risk_score',58).
+  property('risk_reason','multi_facility_same_day').
+  property('risk_rule','multi_facility').
+  property('ui_color','blue').
+  values('claimId').fold()
+```
+
+
+
+
+---
+
+## 10 Rule E Upcoding hint → blue
+Simple and Cosmos friendly.
+
+```gremlin
+g.V().hasLabel('claim').
+  has('ui_color','green').
+  where(out('has_diagnosis').has('code','R51')).
+  where(out('has_procedure').has('code','99215')).
+  property('risk_level','rule_flag').
+  property('risk_score',62).
+  property('risk_reason','dx_proc_mismatch_upcoding_hint').
+  property('risk_rule','upcoding_hint').
+  property('ui_color','blue').
+  values('claimId').fold()
+```
+
+
+
+---
+
+## 11 Viewer query: list all claims with color
+Cosmos safest viewer: `valueMap(true)` (won’t fail if a property is missing).
+
+```gremlin
+g.V().hasLabel('claim').
+  valueMap(true)
+```
+
