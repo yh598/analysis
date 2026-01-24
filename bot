@@ -1,3 +1,250 @@
+// =====================================================
+// 0 Cleanup
+// =====================================================
+g.V().has('pk','shared').drop()
+g.V().has('pk','M0001').drop()
+g.V().has('pk','M0002').drop()
+g.V().has('pk','M0003').drop()
+g.V().has('pk','M0004').drop()
+g.V().has('pk','P0001').drop()
+g.V().has('pk','P0002').drop()
+g.V().has('pk','P0003').drop()
+
+// =====================================================
+// 1 Vertices
+// Convention
+// member vertex pk = memberId
+// provider vertex pk = providerId
+// claim vertex pk = providerId (provider centric monitoring)
+// shared entities pk = shared
+// =====================================================
+
+// Members
+g.addV('member').property('id','m_M0001').property('pk','M0001').property('memberId','M0001').property('dob','1989-03-17').property('state','CA')
+g.addV('member').property('id','m_M0002').property('pk','M0002').property('memberId','M0002').property('dob','1978-08-02').property('state','CA')
+g.addV('member').property('id','m_M0003').property('pk','M0003').property('memberId','M0003').property('dob','1992-01-11').property('state','NV')
+g.addV('member').property('id','m_M0004').property('pk','M0004').property('memberId','M0004').property('dob','1981-05-30').property('state','CA')
+
+// Providers
+g.addV('provider').property('id','p_P0001').property('pk','P0001').property('providerId','P0001').property('npi','1111111111').property('name','Dr Alpha').property('specialty','PT')
+g.addV('provider').property('id','p_P0002').property('pk','P0002').property('providerId','P0002').property('npi','2222222222').property('name','Dr Beta').property('specialty','Chiro')
+g.addV('provider').property('id','p_P0003').property('pk','P0003').property('providerId','P0003').property('npi','3333333333').property('name','Dr Gamma').property('specialty','PrimaryCare')
+
+// Facilities
+g.addV('facility').property('id','f_F0001').property('pk','shared').property('facilityId','F0001').property('name','Sunrise Clinic').property('city','Oakland').property('state','CA')
+g.addV('facility').property('id','f_F0002').property('pk','shared').property('facilityId','F0002').property('name','Bay Rehab Center').property('city','Walnut Creek').property('state','CA')
+
+// Shared entities
+g.addV('phone').property('id','ph_9250000001').property('pk','shared').property('number','9250000001')
+g.addV('phone').property('id','ph_5100000002').property('pk','shared').property('number','5100000002')
+
+g.addV('address').property('id','ad_94596_101').property('pk','shared').property('line1','101 Pringle Ave').property('city','Walnut Creek').property('state','CA').property('zip','94596')
+
+g.addV('bank').property('id','bk_BANKFP001').property('pk','shared').property('fingerprint','BANKFP001')
+
+g.addV('diagnosis').property('id','dx_M545').property('pk','shared').property('code','M54.5').property('name','Low back pain')
+g.addV('diagnosis').property('id','dx_R51').property('pk','shared').property('code','R51').property('name','Headache')
+
+g.addV('procedure').property('id','pr_97110').property('pk','shared').property('code','97110').property('name','Therapeutic exercises')
+g.addV('procedure').property('id','pr_98941').property('pk','shared').property('code','98941').property('name','Chiropractic manipulative')
+g.addV('procedure').property('id','pr_99213').property('pk','shared').property('code','99213').property('name','Office visit')
+g.addV('procedure').property('id','pr_99215').property('pk','shared').property('code','99215').property('name','High complexity office visit')
+
+g.addV('drug').property('id','dr_0001').property('pk','shared').property('ndc','0001').property('name','Drug A')
+g.addV('drug').property('id','dr_0002').property('pk','shared').property('ndc','0002').property('name','Drug B')
+
+// Claims
+// C0001, C0002 duplicate pattern
+g.addV('claim').property('id','c_C0001').property('pk','P0001').property('claimId','C0001').property('memberId','M0001').property('providerId','P0001').property('serviceDate','2026-01-05').property('amount',980).property('status','submitted')
+g.addV('claim').property('id','c_C0002').property('pk','P0001').property('claimId','C0002').property('memberId','M0001').property('providerId','P0001').property('serviceDate','2026-01-05').property('amount',980).property('status','submitted')
+
+// C0003, C0004 duplicate pattern
+g.addV('claim').property('id','c_C0003').property('pk','P0001').property('claimId','C0003').property('memberId','M0002').property('providerId','P0001').property('serviceDate','2026-01-06').property('amount',1240).property('status','submitted')
+g.addV('claim').property('id','c_C0004').property('pk','P0001').property('claimId','C0004').property('memberId','M0002').property('providerId','P0001').property('serviceDate','2026-01-06').property('amount',1240).property('status','submitted')
+
+// C0005, C0006 same day same member different facility (phantom/location anomaly)
+g.addV('claim').property('id','c_C0005').property('pk','P0003').property('claimId','C0005').property('memberId','M0003').property('providerId','P0003').property('serviceDate','2026-01-10').property('amount',180).property('status','submitted')
+g.addV('claim').property('id','c_C0006').property('pk','P0003').property('claimId','C0006').property('memberId','M0003').property('providerId','P0003').property('serviceDate','2026-01-10').property('amount',180).property('status','submitted')
+
+// C0007, C0008 provider shares bank and high units plus drugs
+g.addV('claim').property('id','c_C0007').property('pk','P0002').property('claimId','C0007').property('memberId','M0004').property('providerId','P0002').property('serviceDate','2026-01-12').property('amount',600).property('status','submitted')
+g.addV('claim').property('id','c_C0008').property('pk','P0002').property('claimId','C0008').property('memberId','M0004').property('providerId','P0002').property('serviceDate','2026-01-13').property('amount',600).property('status','submitted')
+
+// C0009 upcoding example
+g.addV('claim').property('id','c_C0009').property('pk','P0003').property('claimId','C0009').property('memberId','M0003').property('providerId','P0003').property('serviceDate','2026-01-11').property('amount',420).property('status','submitted')
+
+// =====================================================
+// 2 Edges
+// Cosmos Gremlin best practice: g.V([pkValue, id])
+// =====================================================
+
+// Shared phone
+g.V(['M0001','m_M0001']).addE('shares_phone').to(g.V(['shared','ph_9250000001']))
+g.V(['M0002','m_M0002']).addE('shares_phone').to(g.V(['shared','ph_9250000001']))
+g.V(['P0001','p_P0001']).addE('shares_phone').to(g.V(['shared','ph_9250000001']))
+g.V(['M0003','m_M0003']).addE('shares_phone').to(g.V(['shared','ph_5100000002']))
+
+// Shared address
+g.V(['M0001','m_M0001']).addE('shares_address').to(g.V(['shared','ad_94596_101']))
+g.V(['M0002','m_M0002']).addE('shares_address').to(g.V(['shared','ad_94596_101']))
+
+// Shared bank by providers
+g.V(['P0001','p_P0001']).addE('shares_bank').to(g.V(['shared','bk_BANKFP001']))
+g.V(['P0002','p_P0002']).addE('shares_bank').to(g.V(['shared','bk_BANKFP001']))
+
+// Claims for provider P0001
+g.V(['P0001','c_C0001']).addE('rendered_by').to(g.V(['P0001','p_P0001']))
+g.V(['P0001','c_C0001']).addE('submitted_by').to(g.V(['M0001','m_M0001']))
+g.V(['P0001','c_C0001']).addE('at').to(g.V(['shared','f_F0001']))
+g.V(['P0001','c_C0001']).addE('has_diagnosis').to(g.V(['shared','dx_M545']))
+g.V(['P0001','c_C0001']).addE('has_procedure').to(g.V(['shared','pr_97110'])).property('units',6)
+
+g.V(['P0001','c_C0002']).addE('rendered_by').to(g.V(['P0001','p_P0001']))
+g.V(['P0001','c_C0002']).addE('submitted_by').to(g.V(['M0001','m_M0001']))
+g.V(['P0001','c_C0002']).addE('at').to(g.V(['shared','f_F0001']))
+g.V(['P0001','c_C0002']).addE('has_diagnosis').to(g.V(['shared','dx_M545']))
+g.V(['P0001','c_C0002']).addE('has_procedure').to(g.V(['shared','pr_97110'])).property('units',6)
+
+g.V(['P0001','c_C0003']).addE('rendered_by').to(g.V(['P0001','p_P0001']))
+g.V(['P0001','c_C0003']).addE('submitted_by').to(g.V(['M0002','m_M0002']))
+g.V(['P0001','c_C0003']).addE('at').to(g.V(['shared','f_F0001']))
+g.V(['P0001','c_C0003']).addE('has_diagnosis').to(g.V(['shared','dx_M545']))
+g.V(['P0001','c_C0003']).addE('has_procedure').to(g.V(['shared','pr_97110'])).property('units',8)
+
+g.V(['P0001','c_C0004']).addE('rendered_by').to(g.V(['P0001','p_P0001']))
+g.V(['P0001','c_C0004']).addE('submitted_by').to(g.V(['M0002','m_M0002']))
+g.V(['P0001','c_C0004']).addE('at').to(g.V(['shared','f_F0001']))
+g.V(['P0001','c_C0004']).addE('has_diagnosis').to(g.V(['shared','dx_M545']))
+g.V(['P0001','c_C0004']).addE('has_procedure').to(g.V(['shared','pr_97110'])).property('units',8)
+
+// Claims for provider P0003
+g.V(['P0003','c_C0005']).addE('rendered_by').to(g.V(['P0003','p_P0003']))
+g.V(['P0003','c_C0005']).addE('submitted_by').to(g.V(['M0003','m_M0003']))
+g.V(['P0003','c_C0005']).addE('at').to(g.V(['shared','f_F0001']))
+g.V(['P0003','c_C0005']).addE('has_diagnosis').to(g.V(['shared','dx_R51']))
+g.V(['P0003','c_C0005']).addE('has_procedure').to(g.V(['shared','pr_99213'])).property('units',1)
+
+g.V(['P0003','c_C0006']).addE('rendered_by').to(g.V(['P0003','p_P0003']))
+g.V(['P0003','c_C0006']).addE('submitted_by').to(g.V(['M0003','m_M0003']))
+g.V(['P0003','c_C0006']).addE('at').to(g.V(['shared','f_F0002']))
+g.V(['P0003','c_C0006']).addE('has_diagnosis').to(g.V(['shared','dx_R51']))
+g.V(['P0003','c_C0006']).addE('has_procedure').to(g.V(['shared','pr_99213'])).property('units',1)
+
+g.V(['P0003','c_C0009']).addE('rendered_by').to(g.V(['P0003','p_P0003']))
+g.V(['P0003','c_C0009']).addE('submitted_by').to(g.V(['M0003','m_M0003']))
+g.V(['P0003','c_C0009']).addE('at').to(g.V(['shared','f_F0002']))
+g.V(['P0003','c_C0009']).addE('has_diagnosis').to(g.V(['shared','dx_R51']))
+g.V(['P0003','c_C0009']).addE('has_procedure').to(g.V(['shared','pr_99215'])).property('units',1)
+
+// Claims for provider P0002
+g.V(['P0002','c_C0007']).addE('rendered_by').to(g.V(['P0002','p_P0002']))
+g.V(['P0002','c_C0007']).addE('submitted_by').to(g.V(['M0004','m_M0004']))
+g.V(['P0002','c_C0007']).addE('at').to(g.V(['shared','f_F0001']))
+g.V(['P0002','c_C0007']).addE('has_diagnosis').to(g.V(['shared','dx_M545']))
+g.V(['P0002','c_C0007']).addE('has_procedure').to(g.V(['shared','pr_98941'])).property('units',10)
+g.V(['P0002','c_C0007']).addE('has_drug').to(g.V(['shared','dr_0001'])).property('qty',30)
+
+g.V(['P0002','c_C0008']).addE('rendered_by').to(g.V(['P0002','p_P0002']))
+g.V(['P0002','c_C0008']).addE('submitted_by').to(g.V(['M0004','m_M0004']))
+g.V(['P0002','c_C0008']).addE('at').to(g.V(['shared','f_F0001']))
+g.V(['P0002','c_C0008']).addE('has_diagnosis').to(g.V(['shared','dx_M545']))
+g.V(['P0002','c_C0008']).addE('has_procedure').to(g.V(['shared','pr_98941'])).property('units',10)
+g.V(['P0002','c_C0008']).addE('has_drug').to(g.V(['shared','dr_0002'])).property('qty',30)
+
+// =====================================================
+// 3 Quick checks
+// =====================================================
+g.V().count()
+g.E().count()
+
+// =====================================================
+// 4 Fraud detection queries
+// =====================================================
+
+// 4.1 Duplicate claims pattern: same memberId, serviceDate, procedure code -> multiple claimIds
+g.V().hasLabel('claim').
+  project('memberId','serviceDate','procCode','claimId').
+    by(values('memberId')).
+    by(values('serviceDate')).
+    by(out('has_procedure').values('code')).
+    by(values('claimId')).
+  group().
+    by(project('memberId','serviceDate','procCode').
+        by(select('memberId')).
+        by(select('serviceDate')).
+        by(select('procCode'))).
+    by(select('claimId').fold()).
+  unfold().
+  filter(select(values).count(local).is(gt(1))).
+  project('key','duplicateClaimIds').
+    by(select(keys)).
+    by(select(values))
+
+// 4.2 Shared phone: phone connected to multiple members and or any provider
+g.V().hasLabel('phone').
+  project('phone','memberCount','providerCount','members','providers').
+    by(values('number')).
+    by(in('shares_phone').hasLabel('member').dedup().count()).
+    by(in('shares_phone').hasLabel('provider').dedup().count()).
+    by(in('shares_phone').hasLabel('member').dedup().values('memberId').fold()).
+    by(in('shares_phone').hasLabel('provider').dedup().values('providerId').fold()).
+  filter(select('memberCount').is(gt(1)).or(select('providerCount').is(gt(0))))
+
+// 4.3 Shared bank across providers
+g.V().hasLabel('bank').
+  project('bankFingerprint','providerCount','providers').
+    by(values('fingerprint')).
+    by(in('shares_bank').hasLabel('provider').dedup().count()).
+    by(in('shares_bank').hasLabel('provider').dedup().
+        project('providerId','npi','name').
+          by(values('providerId')).
+          by(values('npi')).
+          by(values('name')).
+        fold()).
+  filter(select('providerCount').is(gt(1)))
+
+// 4.4 Same day same member different facility (potential phantom / location anomaly)
+g.V().hasLabel('member').
+  project('memberId','sameDayFacilities').
+    by(values('memberId')).
+    by(in('submitted_by').hasLabel('claim').
+        group().
+          by(values('serviceDate')).
+          by(out('at').values('facilityId').dedup().fold()).
+        unfold().
+        filter(select(values).count(local).is(gt(1))).
+        project('serviceDate','facilityIds').
+          by(select(keys)).
+          by(select(values)).
+        fold()).
+  filter(select('sameDayFacilities').count(local).is(gt(0)))
+
+// 4.5 Upcoding hint: diagnosis R51 billed with 99215
+g.V().hasLabel('claim').
+  where(out('has_diagnosis').has('code','R51')).
+  where(out('has_procedure').has('code','99215')).
+  project('claimId','memberId','providerId','serviceDate','amount').
+    by(values('claimId')).
+    by(values('memberId')).
+    by(values('providerId')).
+    by(values('serviceDate')).
+    by(values('amount'))
+
+// =====================================================
+// 5 Explainability: full context for one claim
+// =====================================================
+g.V().hasLabel('claim').has('claimId','C0003').
+  project('claim','member','provider','bank','phones','facility','diagnosis','procedure').
+    by(valueMap(true)).
+    by(out('submitted_by').valueMap(true)).
+    by(out('rendered_by').valueMap(true)).
+    by(out('rendered_by').out('shares_bank').valueMap(true).fold()).
+    by(out('submitted_by').out('shares_phone').valueMap(true).fold()).
+    by(out('at').valueMap(true)).
+    by(out('has_diagnosis').valueMap(true).fold()).
+    by(out('has_procedure').valueMap(true).fold())
+
+
 deploy to prod:
   - step:
       name: Deploying to Prod
