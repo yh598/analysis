@@ -1,3 +1,60 @@
+g.inject(1)
+
+.sideEffect(__.addV('member').property('id','m_M0001').property('pk','M0001').property('memberId','M0001').property('state','CA'))
+.sideEffect(__.addV('member').property('id','m_M0002').property('pk','M0002').property('memberId','M0002').property('state','CA'))
+.sideEffect(__.addV('member').property('id','m_M0003').property('pk','M0003').property('memberId','M0003').property('state','NV'))
+.sideEffect(__.addV('member').property('id','m_M0004').property('pk','M0004').property('memberId','M0004').property('state','CA'))
+.sideEffect(__.addV('member').property('id','m_M0005').property('pk','M0005').property('memberId','M0005').property('state','CA'))
+.sideEffect(__.addV('member').property('id','m_M0006').property('pk','M0006').property('memberId','M0006').property('state','CA'))
+
+.sideEffect(__.addV('provider').property('id','p_P0001').property('pk','P0001').property('providerId','P0001').property('npi','1111111111').property('name','Dr Alpha').property('specialty','PT'))
+.sideEffect(__.addV('provider').property('id','p_P0002').property('pk','P0002').property('providerId','P0002').property('npi','2222222222').property('name','Dr Beta').property('specialty','Chiro'))
+.sideEffect(__.addV('provider').property('id','p_P0003').property('pk','P0003').property('providerId','P0003').property('npi','3333333333').property('name','Dr Gamma').property('specialty','PrimaryCare'))
+.sideEffect(__.addV('provider').property('id','p_P0004').property('pk','P0004').property('providerId','P0004').property('npi','4444444444').property('name','Dr Delta').property('specialty','Derm'))
+
+.sideEffect(__.addV('facility').property('id','f_F0001').property('pk','shared').property('facilityId','F0001').property('name','Sunrise Clinic').property('city','Oakland').property('state','CA'))
+.sideEffect(__.addV('facility').property('id','f_F0002').property('pk','shared').property('facilityId','F0002').property('name','Bay Rehab').property('city','Walnut Creek').property('state','CA'))
+.sideEffect(__.addV('facility').property('id','f_F0003').property('pk','shared').property('facilityId','F0003').property('name','North Care').property('city','Sacramento').property('state','CA'))
+
+.sideEffect(__.addV('phone').property('id','ph_9250000001').property('pk','shared').property('number','9250000001'))
+.sideEffect(__.addV('phone').property('id','ph_5100000002').property('pk','shared').property('number','5100000002'))
+.sideEffect(__.addV('phone').property('id','ph_4080000003').property('pk','shared').property('number','4080000003'))
+
+.sideEffect(__.addV('address').property('id','ad_A1').property('pk','shared').property('addrKey','A1').property('line1','101 Pringle Ave').property('city','Walnut Creek').property('state','CA').property('zip','94596'))
+.sideEffect(__.addV('address').property('id','ad_A2').property('pk','shared').property('addrKey','A2').property('line1','50 Main St').property('city','Oakland').property('state','CA').property('zip','94607'))
+
+.sideEffect(__.addV('bank').property('id','bk_B1').property('pk','shared').property('fingerprint','BANKFP001'))
+.sideEffect(__.addV('bank').property('id','bk_B2').property('pk','shared').property('fingerprint','BANKFP002'))
+
+.sideEffect(__.addV('diagnosis').property('id','dx_M545').property('pk','shared').property('code','M54.5').property('name','Low back pain'))
+.sideEffect(__.addV('diagnosis').property('id','dx_R51').property('pk','shared').property('code','R51').property('name','Headache'))
+
+.sideEffect(__.addV('procedure').property('id','pr_97110').property('pk','shared').property('code','97110').property('name','Therapeutic exercises'))
+.sideEffect(__.addV('procedure').property('id','pr_98941').property('pk','shared').property('code','98941').property('name','Chiropractic manipulative'))
+.sideEffect(__.addV('procedure').property('id','pr_99213').property('pk','shared').property('code','99213').property('name','Office visit'))
+.sideEffect(__.addV('procedure').property('id','pr_99215').property('pk','shared').property('code','99215').property('name','High complexity office visit'))
+
+.sideEffect(__.addV('drug').property('id','dr_0001').property('pk','shared').property('ndc','0001').property('name','Drug A'))
+.sideEffect(__.addV('drug').property('id','dr_0002').property('pk','shared').property('ndc','0002').property('name','Drug B'))
+
+.sideEffect(__.addV('claim').property('id','c_C0001').property('pk','P0001').property('claimId','C0001').property('memberId','M0001').property('providerId','P0001').property('serviceDate','2026-01-05').property('amount',980).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0002').property('pk','P0001').property('claimId','C0002').property('memberId','M0001').property('providerId','P0001').property('serviceDate','2026-01-05').property('amount',980).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0003').property('pk','P0001').property('claimId','C0003').property('memberId','M0002').property('providerId','P0001').property('serviceDate','2026-01-06').property('amount',1240).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0004').property('pk','P0001').property('claimId','C0004').property('memberId','M0002').property('providerId','P0001').property('serviceDate','2026-01-06').property('amount',1240).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0005').property('pk','P0003').property('claimId','C0005').property('memberId','M0003').property('providerId','P0003').property('serviceDate','2026-01-10').property('amount',180).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0006').property('pk','P0003').property('claimId','C0006').property('memberId','M0003').property('providerId','P0003').property('serviceDate','2026-01-10').property('amount',180).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0007').property('pk','P0002').property('claimId','C0007').property('memberId','M0004').property('providerId','P0002').property('serviceDate','2026-01-12').property('amount',600).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0008').property('pk','P0002').property('claimId','C0008').property('memberId','M0004').property('providerId','P0002').property('serviceDate','2026-01-13').property('amount',600).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0009').property('pk','P0003').property('claimId','C0009').property('memberId','M0003').property('providerId','P0003').property('serviceDate','2026-01-11').property('amount',420).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0010').property('pk','P0004').property('claimId','C0010').property('memberId','M0005').property('providerId','P0004').property('serviceDate','2026-01-14').property('amount',210).property('status','submitted'))
+.sideEffect(__.addV('claim').property('id','c_C0011').property('pk','P0004').property('claimId','C0011').property('memberId','M0006').property('providerId','P0004').property('serviceDate','2026-01-14').property('amount',190).property('status','submitted'))
+
+// emit a small confirmation
+.select(last)
+
+
+
+
 // =====================================================
 // 0 Cleanup
 // For a PoC it is simplest to wipe the graph
