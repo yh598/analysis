@@ -1,3 +1,15 @@
+g.V().has('fraud_case', true).
+  repeat(bothE().otherV()).times(2).
+  dedup().
+  filter(__.coalesce(values('ui_color'), constant('')).is(P.neq('red'))).
+  property('risk_level','linked_to_fraud').
+  property('risk_score',85).
+  property('risk_reason','linked_to_known_fraud').
+  property('risk_rule','linked_2hop').
+  property('ui_color','yellow').
+  count()
+
+
 g.inject(1)
 
 // ----------------------------
