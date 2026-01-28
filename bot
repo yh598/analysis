@@ -1,3 +1,7 @@
+python -m pip install -U pip
+python -m pip install -r requirements.txt --only-binary=:all: --target ".python_packages\lib\site-packages"
+
+
 cd C:\Users\yhu01\Downloads\func
 Remove-Item -Recurse -Force .python_packages -ErrorAction SilentlyContinue
 
