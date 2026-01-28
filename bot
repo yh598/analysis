@@ -1,3 +1,12 @@
+•	aiohttp==3.9.5
+	•	async-timeout==4.0.3
+	•	gremlinpython==3.7.2
+	•	azure-functions==1.19.0
+
+Remove-Item -Recurse -Force .python_packages -ErrorAction SilentlyContinue
+python -m pip install -r requirements.txt --target ".python_packages\lib\site-packages"
+
+
 python -m venv .venv
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
