@@ -1,3 +1,6 @@
+python tools/generate_data.py --members 450 --providers 140 --claims 2500 --rings 10 --ring_size 18 --cases 6 --seed 11 --out synthetic_graph.json
+
+
 cd C:\Users\yhu01\Downloads\func
 Remove-Item -Recurse -Force .venv -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force .python_packages -ErrorAction SilentlyContinue
