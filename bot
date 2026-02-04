@@ -1,3 +1,12 @@
+cd path\to\kgui
+py -m http.server 5500
+
+cd kgui\tools
+py generate_data.py --out ..\synthetic_graph.json --seed 11 --members 900 --providers 220 --baseline_claims 2500
+
+
+
+
 python tools/generate_data.py --members 450 --providers 140 --claims 2500 --rings 10 --ring_size 18 --cases 6 --seed 11 --out synthetic_graph.json
 
 
