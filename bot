@@ -1,3 +1,635 @@
+/* app.js
+   Fraud Knowledge Graph UI
+   Works with:
+   1) Local JSON file: { nodes: [...], edges: [...] } or { elements: { nodes: [...], edges: [...] } }
+   2) Azure Function API returning:
+      a) { nodes: [...], edges: [...] }  OR
+      b) { items: [...] } where each item is a claim like:
+         { id, claimId, memberId, providerId, ui_color, risk_score, risk_reason, risk_rule, ... }
+*/
+
+"use strict";
+
+/* -----------------------------
+   Helpers
+----------------------------- */
+function $(id) { return document.getElementById(id); }
+
+function setStatus(msg, tone) {
+  const el = $("status");
+  if (!el) return;
+  el.textContent = msg;
+
+  // Optional tone styling, safe if your CSS defines these vars
+  const map = {
+    ok: "var(--ok, #22c55e)",
+    warn: "var(--warn, #f59e0b)",
+    bad: "var(--bad, #ef4444)",
+    info: "var(--muted, #94a3b8)"
+  };
+  el.style.color = map[tone || "info"] || map.info;
+}
+
+function sanitizeBaseUrl(u) {
+  if (!u) return "";
+  u = String(u).trim();
+  // If user pastes full function url that includes /api/claims remove path
+  // but keep domain
+  try {
+    if (u.startsWith("http")) {
+      const url = new URL(u);
+      return url.origin;
+    }
+  } catch (_) {}
+  // If user pasted domain only
+  if (!u.startsWith("http")) u = "https://" + u;
+  try {
+    const url = new URL(u);
+    return url.origin;
+  } catch (_) {
+    return "";
+  }
+}
+
+function buildUrl(baseUrl, path, params) {
+  const origin = sanitizeBaseUrl(baseUrl);
+  if (!origin) return "";
+  const p = path.startsWith("/") ? path : "/" + path;
+  const url = new URL(origin + p);
+
+  if (params && typeof params === "object") {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v === undefined || v === null) return;
+      const s = String(v).trim();
+      if (!s) return;
+      url.searchParams.set(k, s);
+    });
+  }
+  return url.toString();
+}
+
+function safeJsonParse(text) {
+  try { return JSON.parse(text); }
+  catch (e) { return null; }
+}
+
+/* -----------------------------
+   Cytoscape styling
+----------------------------- */
+function nodeStyle(n) {
+  const data = n.data || n;
+
+  const type = (data.type || data.kind || "").toLowerCase();
+  const label = data.label || data.id || "";
+  const risk = (data.risk || data.risk_level || "").toLowerCase();
+
+  // Fraud marker boolean can be on several keys
+  const isFraud =
+    !!data.fraud ||
+    !!data.isFraud ||
+    !!data.is_fraud ||
+    !!data.flagged ||
+    (type === "fraud_case") ||
+    (risk === "high") ||
+    (String(data.ui_color || "").toLowerCase() === "red");
+
+  // Default palette by entity type (no hard requirement but gives nice demo)
+  // You can override by providing data.color in your JSON
+  let color = data.color || "";
+
+  if (!color) {
+    if (type === "claim") color = "#3b82f6";
+    else if (type === "member") color = "#a855f7";
+    else if (type === "provider") color = "#f59e0b";
+    else if (type === "address") color = "#22c55e";
+    else if (type === "device") color = "#eab308";
+    else if (type === "ip") color = "#06b6d4";
+    else if (type === "bank_account") color = "#94a3b8";
+    else if (type === "pharmacy") color = "#fb7185";
+    else if (type === "fraud_case") color = "#ef4444";
+    else color = "#64748b";
+  }
+
+  // Fraud highlight: FULL red fill (not just border)
+  // plus stronger label weight and thicker outline
+  if (isFraud) {
+    color = "#ef4444";
+  }
+
+  const size = isFraud ? 54 : 40;
+  const borderWidth = isFraud ? 6 : 2;
+  const borderColor = isFraud ? "#ffffff" : "rgba(255,255,255,0.25)";
+
+  return {
+    label,
+    color,
+    size,
+    borderWidth,
+    borderColor,
+    isFraud
+  };
+}
+
+function edgeStyle(e) {
+  const data = e.data || e;
+  const type = (data.type || data.kind || "").toLowerCase();
+
+  let label = data.label || "";
+  if (!label && type) label = type;
+
+  // Slightly different widths for key relationships
+  let width = 2;
+  if (label === "shared_device" || label === "shared_address" || label === "shared_ip") width = 3;
+
+  return { label, width };
+}
+
+function cyStylesheet() {
+  return [
+    {
+      selector: "core",
+      style: {
+        "active-bg-color": "#000000",
+        "active-bg-opacity": 0
+      }
+    },
+
+    {
+      selector: "node",
+      style: {
+        "background-color": "data(color)",
+        "width": "data(size)",
+        "height": "data(size)",
+        "border-width": "data(borderWidth)",
+        "border-color": "data(borderColor)",
+        "label": "data(label)",
+        "color": "#e5e7eb",
+        "font-size": 12,
+        "text-valign": "center",
+        "text-halign": "center",
+        "text-outline-width": 0.5,
+        "text-outline-color": "rgba(0,0,0,0.55)",
+        "text-wrap": "wrap",
+        "text-max-width": 90,
+        "overlay-opacity": 0
+      }
+    },
+
+    {
+      selector: "node[isFraud = 1]",
+      style: {
+        "font-size": 13,
+        "font-weight": "700"
+      }
+    },
+
+    {
+      selector: "edge",
+      style: {
+        "curve-style": "bezier",
+        "line-color": "rgba(226,232,240,0.30)",
+        "width": "data(width)",
+        "target-arrow-shape": "triangle",
+        "target-arrow-color": "rgba(226,232,240,0.35)",
+        "arrow-scale": 0.9,
+        "label": "data(label)",
+        "font-size": 10,
+        "color": "rgba(226,232,240,0.85)",
+        "text-outline-width": 0.5,
+        "text-outline-color": "rgba(0,0,0,0.55)",
+        "text-rotation": "autorotate",
+        "text-margin-y": -6,
+        "overlay-opacity": 0
+      }
+    },
+
+    {
+      selector: ":selected",
+      style: {
+        "border-color": "#60a5fa",
+        "line-color": "#60a5fa",
+        "target-arrow-color": "#60a5fa"
+      }
+    }
+  ];
+}
+
+/* -----------------------------
+   Data adapters
+----------------------------- */
+function normalizeGraphPayload(payload) {
+  if (!payload) return { nodes: [], edges: [] };
+
+  // Common wrappers
+  if (payload.elements && payload.elements.nodes && payload.elements.edges) {
+    return { nodes: payload.elements.nodes, edges: payload.elements.edges };
+  }
+  if (payload.nodes && payload.edges) {
+    return { nodes: payload.nodes, edges: payload.edges };
+  }
+
+  // Azure function claim list format: { items: [...] }
+  if (Array.isArray(payload.items)) {
+    return claimsItemsToGraph(payload.items);
+  }
+
+  // If already cytoscape elements array
+  if (Array.isArray(payload)) {
+    // Attempt to split nodes/edges
+    const nodes = [];
+    const edges = [];
+    payload.forEach((el) => {
+      if (!el) return;
+      if (el.data && (el.data.source && el.data.target)) edges.push(el);
+      else nodes.push(el);
+    });
+    return { nodes, edges };
+  }
+
+  return { nodes: [], edges: [] };
+}
+
+function toCyNode(id, type, props) {
+  return {
+    data: {
+      id,
+      label: id,
+      type,
+      props: props || {}
+    }
+  };
+}
+
+function toCyEdge(id, source, target, label, props) {
+  return {
+    data: {
+      id,
+      source,
+      target,
+      label: label || "",
+      type: label || "",
+      props: props || {}
+    }
+  };
+}
+
+function claimsItemsToGraph(items) {
+  const nodesById = new Map();
+  const edges = [];
+  let edgeSeq = 1;
+
+  function upsertNode(id, type, props) {
+    if (!id) return;
+    if (!nodesById.has(id)) nodesById.set(id, toCyNode(id, type, props));
+    else {
+      // merge props
+      const cur = nodesById.get(id);
+      cur.data.type = cur.data.type || type;
+      cur.data.props = Object.assign({}, cur.data.props || {}, props || {});
+    }
+  }
+
+  items.forEach((c) => {
+    const claimId = c.id || c.claimId || c.claim_id;
+    const memberId = c.memberId || c.member_id;
+    const providerId = c.providerId || c.provider_id;
+
+    const uiColor = String(c.ui_color || c.color || "").toLowerCase();
+    const riskScore = c.risk_score;
+    const riskReason = c.risk_reason;
+    const riskRule = c.risk_rule;
+
+    const isFraud =
+      uiColor === "red" ||
+      String(riskReason || "").toLowerCase().includes("fraud") ||
+      (typeof riskScore === "number" && riskScore >= 90);
+
+    upsertNode(claimId, "claim", {
+      claimId,
+      memberId,
+      providerId,
+      amount: c.amount,
+      serviceDate: c.serviceDate || c.service_date,
+      ui_color: c.ui_color,
+      risk_score: c.risk_score,
+      risk_reason: c.risk_reason,
+      risk_rule: c.risk_rule,
+      fraud: isFraud
+    });
+
+    upsertNode(memberId, "member", { memberId });
+    upsertNode(providerId, "provider", { providerId });
+
+    if (claimId && memberId) {
+      edges.push(toCyEdge("e" + (edgeSeq++), claimId, memberId, "member"));
+    }
+    if (claimId && providerId) {
+      edges.push(toCyEdge("e" + (edgeSeq++), claimId, providerId, "provider"));
+    }
+  });
+
+  const nodes = Array.from(nodesById.values());
+  return { nodes, edges };
+}
+
+/* -----------------------------
+   Graph loading
+----------------------------- */
+let cy = null;
+
+function initCy() {
+  if (cy) return cy;
+
+  cy = cytoscape({
+    container: $("cy"),
+    elements: [],
+    style: cyStylesheet(),
+    wheelSensitivity: 0.18,
+    pixelRatio: 2
+  });
+
+  cy.on("tap", "node, edge", (evt) => {
+    const ele = evt.target;
+    const data = ele.data();
+    $("selected").textContent = JSON.stringify({
+      type: ele.isNode() ? "node" : "edge",
+      id: data.id,
+      label: data.label,
+      kind: data.type,
+      source: data.source,
+      target: data.target,
+      props: data.props || {}
+    }, null, 2);
+  });
+
+  cy.on("tap", (evt) => {
+    if (evt.target === cy) {
+      $("selected").textContent = "Click a node or edge";
+    }
+  });
+
+  return cy;
+}
+
+function applyComputedStyles(graph) {
+  const nodes = (graph.nodes || []).map((n) => {
+    const data = (n.data ? n.data : n);
+    const ns = nodeStyle({ data });
+    const out = n.data ? JSON.parse(JSON.stringify(n)) : { data: JSON.parse(JSON.stringify(data)) };
+
+    out.data.label = data.label || ns.label;
+    out.data.color = ns.color;
+    out.data.size = ns.size;
+    out.data.borderWidth = ns.borderWidth;
+    out.data.borderColor = ns.borderColor;
+    out.data.isFraud = ns.isFraud ? 1 : 0;
+    return out;
+  });
+
+  const edges = (graph.edges || []).map((e) => {
+    const data = (e.data ? e.data : e);
+    const es = edgeStyle({ data });
+    const out = e.data ? JSON.parse(JSON.stringify(e)) : { data: JSON.parse(JSON.stringify(data)) };
+
+    out.data.label = data.label || es.label;
+    out.data.width = es.width;
+    return out;
+  });
+
+  return { nodes, edges };
+}
+
+async function loadFromLocalFile() {
+  const fileName = $("localFile").value || "synthetic_graph.json";
+  const url = fileName; // relative file in same folder
+
+  setStatus("Loading local file: " + fileName, "info");
+
+  const resp = await fetch(url, { cache: "no-store" });
+  if (!resp.ok) {
+    throw new Error("Failed to fetch local file: " + resp.status + " " + resp.statusText);
+  }
+  const text = await resp.text();
+  const payload = safeJsonParse(text);
+  if (!payload) throw new Error("Local JSON parse failed. Check file format.");
+  return normalizeGraphPayload(payload);
+}
+
+async function loadFromApi() {
+  const baseUrl = $("baseUrl").value || "";
+  const fnKey = $("fnKey").value || "";
+
+  const limit = String($("limit").value || "250").trim();
+  const risk = $("riskFilter").value || "all";
+  const searchId = String($("searchId").value || "").trim();
+
+  // You can support multiple function paths
+  // Common endpoints we used earlier: /api/claims, /api/provider_claims, /api/paths, /api/neighborhood
+  // For this demo, default to /api/claims
+  const path = "/api/claims";
+
+  const params = { limit };
+  if (risk && risk !== "all") params.risk = risk;
+  if (searchId) params.id = searchId; // if your function expects "id"
+  // Many Azure Functions use "code" query string for function key
+  if (fnKey) params.code = fnKey;
+
+  const url = buildUrl(baseUrl, path, params);
+  if (!url) throw new Error("Invalid API base url. Paste the domain like https://yourapp.azurewebsites.net");
+
+  setStatus("Calling API: " + url, "info");
+
+  const resp = await fetch(url, { cache: "no-store" });
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => "");
+    throw new Error("API error " + resp.status + ": " + (t || resp.statusText));
+  }
+  const payload = await resp.json();
+  return normalizeGraphPayload(payload);
+}
+
+function mountGraph(graph) {
+  const c = initCy();
+  c.elements().remove();
+
+  const computed = applyComputedStyles(graph);
+
+  // Convert to cytoscape element array
+  const elements = [];
+  computed.nodes.forEach((n) => elements.push(n.data ? n : { data: n }));
+  computed.edges.forEach((e) => elements.push(e.data ? e : { data: e }));
+
+  c.add(elements);
+
+  // Layout
+  const layout = c.layout({
+    name: "cose",
+    animate: true,
+    animationDuration: 450,
+    idealEdgeLength: 110,
+    nodeRepulsion: 9000,
+    gravity: 0.35,
+    numIter: 900,
+    randomize: true
+  });
+  layout.run();
+
+  // Fit with padding for a nicer initial view
+  setTimeout(() => {
+    c.fit(undefined, 50);
+  }, 500);
+
+  setStatus(
+    "Loaded graph. Nodes " + computed.nodes.length + " Edges " + computed.edges.length,
+    "ok"
+  );
+}
+
+async function handleLoad() {
+  try {
+    $("selected").textContent = "Click a node or edge";
+    const mode = $("sourceMode").value;
+
+    let graph;
+    if (mode === "file") graph = await loadFromLocalFile();
+    else graph = await loadFromApi();
+
+    mountGraph(graph);
+  } catch (err) {
+    console.error(err);
+    setStatus(String(err && err.message ? err.message : err), "bad");
+    alert(String(err && err.message ? err.message : err));
+  }
+}
+
+/* -----------------------------
+   Focus and view controls
+----------------------------- */
+function focusOnId(id) {
+  if (!cy) return;
+  id = String(id || "").trim();
+  if (!id) return;
+
+  const node = cy.getElementById(id);
+  if (!node || node.empty()) {
+    setStatus("Not found: " + id, "warn");
+    return;
+  }
+
+  cy.elements().unselect();
+  node.select();
+
+  // Animate to node
+  cy.animate({
+    center: { eles: node },
+    zoom: Math.max(cy.zoom(), 1.2)
+  }, { duration: 350 });
+
+  setStatus("Focused on " + id, "ok");
+}
+
+function relayout() {
+  if (!cy) return;
+  const layout = cy.layout({
+    name: "cose",
+    animate: true,
+    animationDuration: 450,
+    idealEdgeLength: 110,
+    nodeRepulsion: 9000,
+    gravity: 0.35,
+    numIter: 900,
+    randomize: true
+  });
+  layout.run();
+}
+
+function exportPng() {
+  if (!cy) return;
+  const png64 = cy.png({ bg: "#0b1220", full: true, scale: 2 });
+  const a = document.createElement("a");
+  a.href = png64;
+  a.download = "fraud_kg.png";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function fitView() {
+  if (!cy) return;
+  cy.fit(undefined, 50);
+}
+
+function zoomIn() {
+  if (!cy) return;
+  cy.zoom({
+    level: cy.zoom() * 1.15,
+    renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 }
+  });
+}
+
+function zoomOut() {
+  if (!cy) return;
+  cy.zoom({
+    level: cy.zoom() / 1.15,
+    renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 }
+  });
+}
+
+/* -----------------------------
+   Wire up UI
+----------------------------- */
+function bindUi() {
+  $("loadBtn").addEventListener("click", handleLoad);
+
+  $("focusBtn").addEventListener("click", () => {
+    const id = $("searchId").value;
+    focusOnId(id);
+  });
+
+  $("fitBtn").addEventListener("click", fitView);
+  $("layoutBtn").addEventListener("click", relayout);
+  $("exportBtn").addEventListener("click", exportPng);
+
+  $("zoomInBtn").addEventListener("click", zoomIn);
+  $("zoomOutBtn").addEventListener("click", zoomOut);
+
+  // Nice behavior: Enter triggers focus if already loaded, else load
+  $("searchId").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      if (cy && cy.elements().length > 0) focusOnId($("searchId").value);
+      else handleLoad();
+    }
+  });
+
+  // Toggle connection controls for mode
+  function refreshModeUi() {
+    const mode = $("sourceMode").value;
+    const showApi = mode === "api";
+    // Elements exist even if hidden by CSS
+    $("baseUrl").disabled = !showApi;
+    $("fnKey").disabled = !showApi;
+    $("localFile").disabled = showApi;
+
+    setStatus(showApi ? "API mode selected" : "Local file mode selected", "info");
+  }
+  $("sourceMode").addEventListener("change", refreshModeUi);
+  refreshModeUi();
+}
+
+/* -----------------------------
+   Boot
+----------------------------- */
+window.addEventListener("DOMContentLoaded", () => {
+  initCy();
+  bindUi();
+
+  // Optional: auto load local file on startup for smooth demos
+  // If you want to avoid auto load, comment out the next two lines
+  $("sourceMode").value = "file";
+  handleLoad().catch(() => {});
+});
+
+
 cd path\to\kgui
 py -m http.server 5500
 
